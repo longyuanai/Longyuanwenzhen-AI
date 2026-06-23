@@ -1,0 +1,37 @@
+{
+  "name": "bazi-backend",
+  "version": "1.0.0",
+  "description": "智能八字排盘后端服务",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "test": "jest"
+  },
+  "keywords": [
+    "bazi",
+    "miniprogram",
+    "weixin"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.4.0",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.3.1",
+    "jsonwebtoken": "^9.0.1",
+    "koa": "^2.14.1",
+    "koa-bodyparser": "^4.4.0",
+    "koa-cors": "^0.0.16",
+    "koa-jwt": "^4.0.0",
+    "koa-router": "^12.0.1",
+    "log4js": "^6.9.1",
+    "lunar-javascript": "^1.7.7",
+    "mongoose": "^7.4.0",
+    "redis": "^4.6.7"
+  },
+  "devDependencies": {
+    "jest": "^29.6.1",
+    "nodemon": "^3.0.1"
+  }
+}

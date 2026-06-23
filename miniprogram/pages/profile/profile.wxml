@@ -1,0 +1,57 @@
+<!--pages/profile/profile.wxml-->
+<view class="container">
+  <!-- 用户信息 -->
+  <view class="user-section card" wx:if="{{hasUserInfo}}">
+    <view class="user-info">
+      <image class="avatar" src="{{userInfo.avatarUrl}}" mode="aspectFill"></image>
+      <view class="user-text">
+        <text class="nickname">{{userInfo.nickName}}</text>
+        <text class="user-id">欢迎使用</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 未登录 -->
+  <view class="login-tip card" wx:else>
+    <text class="tip-text">登录后可保存排盘记录</text>
+  </view>
+
+  <!-- 排盘历史 -->
+  <view class="history-section card">
+    <view class="section-header">
+      <text class="section-title">排盘历史</text>
+      <text class="clear-btn" bindtap="clearHistory" wx:if="{{historyList.length > 0}}">清除</text>
+    </view>
+
+    <view class="history-list" wx:if="{{historyList.length > 0}}">
+      <view class="history-item" wx:for="{{historyList}}" wx:key="id" bindtap="viewHistory" data-index="{{index}}">
+        <view class="history-info">
+          <text class="history-date">{{item.birthDate}} {{item.birthTime}}</text>
+          <text class="history-gender">{{item.gender === 'male' ? '男' : '女'}}</text>
+        </view>
+        <view class="history-bazi">
+          {{item.yearPillar.gan}}{{item.yearPillar.zhi}}年
+          {{item.monthPillar.gan}}{{item.monthPillar.zhi}}月
+          {{item.dayPillar.gan}}{{item.dayPillar.zhi}}日
+          {{item.hourPillar.gan}}{{item.hourPillar.zhi}}时
+        </view>
+      </view>
+    </view>
+
+    <view class="empty-tip" wx:else>
+      <text class="empty-text">暂无排盘记录</text>
+    </view>
+  </view>
+
+  <!-- 关于 -->
+  <view class="about-section card">
+    <view class="about-item">
+      <text class="about-label">版本</text>
+      <text class="about-value">v1.0.0</text>
+    </view>
+    <view class="about-item">
+      <text class="about-label">说明</text>
+      <text class="about-value">传承文化 · 科学解读</text>
+    </view>
+  </view>
+</view>

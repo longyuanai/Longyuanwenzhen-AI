@@ -1,0 +1,7 @@
+# 统一文本文件换行为 LF,消除 Windows CRLF 警告
+* text=auto eol=lf
+
+# 二进制文件不做转换
+*.png binary
+*.jpg binary
+*.ico binary

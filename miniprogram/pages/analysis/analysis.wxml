@@ -1,0 +1,81 @@
+<!--pages/analysis/analysis.wxml-->
+<view class="container">
+  <!-- 八字信息卡片 -->
+  <view class="bazi-card" wx:if="{{result}}">
+    <view class="card-header">
+      <text class="title">八字信息</text>
+    </view>
+    <view class="bazi-info">
+      <view class="pillar" wx:for="{{[result.yearPillar, result.monthPillar, result.dayPillar, result.hourPillar]}}" wx:for-item="pillar" wx:key="gan">
+        <view class="gan">{{pillar.gan}}</view>
+        <view class="zhi">{{pillar.zhi}}</view>
+      </view>
+    </view>
+    <view class="pillar-labels">
+      <text>年柱</text>
+      <text>月柱</text>
+      <text>日柱</text>
+      <text>时柱</text>
+    </view>
+  </view>
+
+  <!-- Tab切换 -->
+  <view class="tabs">
+    <view class="tab {{activeTab === 'basic' ? 'active' : ''}}" bindtap="loadBasicAnalysis">
+      <text>基础解读</text>
+    </view>
+    <view class="tab {{activeTab === 'deep' ? 'active' : ''}}" bindtap="switchToDeep">
+      <text>深度报告</text>
+      <view class="vip-badge" wx:if="{{!isPaid}}">付费</view>
+    </view>
+  </view>
+
+  <!-- 加载状态 -->
+  <view class="loading-container" wx:if="{{isLoading}}">
+    <view class="loading-spinner"></view>
+    <text class="loading-text">正在生成解读...</text>
+  </view>
+
+  <!-- 解读内容 -->
+  <view class="content-container" wx:else>
+    <view class="analysis-content" wx:if="{{activeTab === 'basic'}}">
+      <rich-text nodes="{{analysisContent}}"></rich-text>
+    </view>
+    <view class="analysis-content" wx:if="{{activeTab === 'deep'}}">
+      <rich-text nodes="{{deepContent}}"></rich-text>
+    </view>
+  </view>
+
+  <!-- 底部操作 -->
+  <view class="footer-actions">
+    <button class="btn-secondary" bindtap="goBack">返回排盘</button>
+    <button class="btn-primary" open-type="share">分享解读</button>
+  </view>
+</view>
+
+<!-- 付费弹窗 -->
+<view class="modal-mask" wx:if="{{showPayModal}}" bindtap="closePayModal">
+  <view class="modal-content" catchtap="">
+    <view class="modal-header">
+      <text class="modal-title">深度报告</text>
+      <view class="modal-close" bindtap="closePayModal">×</view>
+    </view>
+    <view class="modal-body">
+      <view class="price-info">
+        <text class="price-label">解锁深度报告</text>
+        <text class="price-value">¥99.00</text>
+      </view>
+      <view class="features">
+        <view class="feature-item">✓ 命局总评</view>
+        <view class="feature-item">✓ 事业财运分析</view>
+        <view class="feature-item">✓ 感情婚姻分析</view>
+        <view class="feature-item">✓ 健康运势分析</view>
+        <view class="feature-item">✓ 人生建议</view>
+      </view>
+    </view>
+    <view class="modal-footer">
+      <button class="btn-cancel" bindtap="closePayModal">取消</button>
+      <button class="btn-pay" bindtap="doPayment">立即支付</button>
+    </view>
+  </view>
+</view>

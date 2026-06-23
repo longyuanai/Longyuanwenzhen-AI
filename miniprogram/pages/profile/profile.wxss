@@ -1,0 +1,146 @@
+/* pages/profile/profile.wxss */
+
+.container {
+  min-height: 100vh;
+  background: #F5F5F5;
+  padding-bottom: 40rpx;
+}
+
+/* 用户信息 */
+.user-section {
+  margin: 30rpx;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+}
+
+.avatar {
+  width: 100rpx;
+  height: 100rpx;
+  border-radius: 50%;
+  margin-right: 30rpx;
+}
+
+.user-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.nickname {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 10rpx;
+}
+
+.user-id {
+  font-size: 26rpx;
+  color: #999;
+}
+
+/* 登录提示 */
+.login-tip {
+  margin: 30rpx;
+  text-align: center;
+  padding: 40rpx;
+}
+
+.tip-text {
+  font-size: 28rpx;
+  color: #999;
+}
+
+/* 历史记录 */
+.history-section {
+  margin: 0 30rpx 30rpx;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30rpx;
+}
+
+.section-title {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: #333;
+}
+
+.clear-btn {
+  font-size: 26rpx;
+  color: #F5222D;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.history-item {
+  padding: 24rpx;
+  background: #f8f8f8;
+  border-radius: 8rpx;
+}
+
+.history-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.history-date {
+  font-size: 26rpx;
+  color: #666;
+}
+
+.history-gender {
+  font-size: 26rpx;
+  color: #999;
+}
+
+.history-bazi {
+  font-size: 28rpx;
+  color: #333;
+  font-weight: 500;
+}
+
+.empty-tip {
+  text-align: center;
+  padding: 60rpx 0;
+}
+
+.empty-text {
+  font-size: 28rpx;
+  color: #999;
+}
+
+/* 关于 */
+.about-section {
+  margin: 0 30rpx;
+}
+
+.about-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 24rpx 0;
+  border-bottom: 2rpx solid #f0f0f0;
+}
+
+.about-item:last-child {
+  border-bottom: none;
+}
+
+.about-label {
+  font-size: 28rpx;
+  color: #666;
+}
+
+.about-value {
+  font-size: 28rpx;
+  color: #333;
+}

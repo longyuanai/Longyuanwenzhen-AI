@@ -1,0 +1,82 @@
+<!--pages/paipan/paipan.wxml-->
+<view class="container">
+  <!-- 标题 -->
+  <view class="header">
+    <text class="title">八字排盘</text>
+    <text class="subtitle">请输入您的出生信息</text>
+  </view>
+
+  <!-- 表单 -->
+  <view class="form card">
+    <!-- 出生日期 -->
+    <view class="form-item">
+      <view class="label">
+        <text class="label-text">出生日期</text>
+        <text class="required">*</text>
+      </view>
+      <picker
+        mode="date"
+        value="{{birthDate}}"
+        start="1900-01-01"
+        end="2100-12-31"
+        bindchange="onDateChange"
+      >
+        <view class="picker">
+          <text class="picker-value">{{birthDate || '请选择日期'}}</text>
+          <text class="picker-arrow">></text>
+        </view>
+      </picker>
+    </view>
+
+    <!-- 出生时间 -->
+    <view class="form-item">
+      <view class="label">
+        <text class="label-text">出生时间</text>
+        <text class="required">*</text>
+      </view>
+      <picker
+        mode="time"
+        value="{{birthTime}}"
+        start="00:00"
+        end="23:59"
+        bindchange="onTimeChange"
+      >
+        <view class="picker">
+          <text class="picker-value">{{birthTime || '请选择时间'}}</text>
+          <text class="picker-arrow">></text>
+        </view>
+      </picker>
+    </view>
+
+    <!-- 性别 -->
+    <view class="form-item">
+      <view class="label">
+        <text class="label-text">性别</text>
+        <text class="required">*</text>
+      </view>
+      <radio-group bindchange="onGenderChange" class="radio-group">
+        <label class="radio-item" wx:for="{{genderOptions}}" wx:key="value">
+          <radio value="{{item.value}}" checked="{{gender === item.value}}" />
+          <text>{{item.label}}</text>
+        </label>
+      </radio-group>
+    </view>
+  </view>
+
+  <!-- 说明 -->
+  <view class="tips card">
+    <view class="tip-title">温馨提示</view>
+    <view class="tip-content">
+      <text>1. 请确保出生时间准确，时辰对排盘结果影响较大</text>
+      <text>2. 如不确定具体时间，可选择相近时辰</text>
+      <text>3. 排盘结果仅供参考，请理性看待</text>
+    </view>
+  </view>
+
+  <!-- 提交按钮 -->
+  <view class="action-section">
+    <button class="btn-submit" bindtap="startPaipan" loading="{{isLoading}}">
+      {{isLoading ? '排盘中...' : '开始排盘'}}
+    </button>
+  </view>
+</view>

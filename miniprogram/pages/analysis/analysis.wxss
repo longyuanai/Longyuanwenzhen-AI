@@ -1,0 +1,280 @@
+/* pages/analysis/analysis.wxss */
+.container {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #F5F7FA 0%, #FFFFFF 100%);
+  padding-bottom: 120rpx;
+}
+
+/* 八字卡片 */
+.bazi-card {
+  margin: 30rpx;
+  padding: 30rpx;
+  background: #FFFFFF;
+  border-radius: 20rpx;
+  box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.05);
+}
+
+.card-header {
+  margin-bottom: 20rpx;
+}
+
+.title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.bazi-info {
+  display: flex;
+  justify-content: space-around;
+  margin: 20rpx 0;
+}
+
+.pillar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.gan, .zhi {
+  width: 60rpx;
+  height: 60rpx;
+  line-height: 60rpx;
+  text-align: center;
+  border-radius: 10rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.gan {
+  background: #4A90E2;
+  color: #FFFFFF;
+}
+
+.zhi {
+  background: #67C23A;
+  color: #FFFFFF;
+}
+
+.pillar-labels {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  color: #999;
+}
+
+/* Tab切换 */
+.tabs {
+  display: flex;
+  margin: 0 30rpx;
+  background: #FFFFFF;
+  border-radius: 50rpx;
+  padding: 6rpx;
+  box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.05);
+}
+
+.tab {
+  flex: 1;
+  height: 70rpx;
+  line-height: 70rpx;
+  text-align: center;
+  font-size: 28rpx;
+  color: #666;
+  border-radius: 50rpx;
+  position: relative;
+  transition: all 0.3s;
+}
+
+.tab.active {
+  background: #4A90E2;
+  color: #FFFFFF;
+}
+
+.vip-badge {
+  position: absolute;
+  top: -10rpx;
+  right: 20rpx;
+  background: #FF6B6B;
+  color: #FFFFFF;
+  font-size: 20rpx;
+  padding: 2rpx 10rpx;
+  border-radius: 20rpx;
+}
+
+/* 加载状态 */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 100rpx 0;
+}
+
+.loading-spinner {
+  width: 60rpx;
+  height: 60rpx;
+  border: 4rpx solid #E5E5E5;
+  border-top-color: #4A90E2;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  margin-top: 20rpx;
+  font-size: 28rpx;
+  color: #999;
+}
+
+/* 内容区域 */
+.content-container {
+  margin: 30rpx;
+  padding: 30rpx;
+  background: #FFFFFF;
+  border-radius: 20rpx;
+  min-height: 400rpx;
+}
+
+.analysis-content {
+  font-size: 28rpx;
+  line-height: 1.8;
+  color: #333;
+}
+
+/* 底部操作 */
+.footer-actions {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 20rpx;
+  padding: 20rpx 30rpx;
+  background: #FFFFFF;
+  box-shadow: 0 -4rpx 20rpx rgba(0, 0, 0, 0.05);
+}
+
+.btn-secondary, .btn-primary {
+  flex: 1;
+  height: 80rpx;
+  line-height: 80rpx;
+  border-radius: 40rpx;
+  font-size: 28rpx;
+  border: none;
+}
+
+.btn-secondary {
+  background: #F5F5F5;
+  color: #666;
+}
+
+.btn-primary {
+  background: #4A90E2;
+  color: #FFFFFF;
+}
+
+/* 付费弹窗 */
+.modal-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  width: 600rpx;
+  background: #FFFFFF;
+  border-radius: 20rpx;
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 30rpx;
+  border-bottom: 1rpx solid #EEE;
+}
+
+.modal-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.modal-close {
+  font-size: 40rpx;
+  color: #999;
+  line-height: 1;
+}
+
+.modal-body {
+  padding: 30rpx;
+}
+
+.price-info {
+  text-align: center;
+  margin-bottom: 30rpx;
+}
+
+.price-label {
+  display: block;
+  font-size: 28rpx;
+  color: #666;
+  margin-bottom: 10rpx;
+}
+
+.price-value {
+  display: block;
+  font-size: 48rpx;
+  font-weight: 600;
+  color: #FF6B6B;
+}
+
+.features {
+  background: #F5F7FA;
+  border-radius: 10rpx;
+  padding: 20rpx;
+}
+
+.feature-item {
+  font-size: 26rpx;
+  color: #666;
+  line-height: 2;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 20rpx;
+  padding: 20rpx 30rpx 30rpx;
+}
+
+.btn-cancel, .btn-pay {
+  flex: 1;
+  height: 80rpx;
+  line-height: 80rpx;
+  border-radius: 40rpx;
+  font-size: 28rpx;
+  border: none;
+}
+
+.btn-cancel {
+  background: #F5F5F5;
+  color: #666;
+}
+
+.btn-pay {
+  background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%);
+  color: #FFFFFF;
+}

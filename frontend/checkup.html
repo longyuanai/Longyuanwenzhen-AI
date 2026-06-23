@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>AI 八字 · 五行体检</title>
+<style>
+  :root {
+    --ink: #2b2b33; --ink2: #6b6b78; --paper: #f6f1e7; --card: #fffdf8;
+    --line: #e4dcc9; --accent: #9a2d2d; --accent2: #c0392b;
+    --mu: #2e8b57; --huo: #c0392b; --tu: #b07d3a; --jin: #c9a227; --shui: #2f6fb0;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 480px; margin: 0 auto; padding: 18px 16px 48px; }
+  .title { text-align: center; margin: 8px 0 4px; }
+  .title h1 { font-size: 22px; letter-spacing: 3px; margin: 0; font-weight: 700; }
+  .title p { color: var(--ink2); font-size: 12px; margin: 6px 0 0; letter-spacing: 1px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-top: 14px; box-shadow: 0 2px 10px rgba(120,90,40,.05); }
+  .card h2 { font-size: 15px; margin: 0 0 12px; letter-spacing: 1px; display: flex; align-items: center; gap: 6px; }
+  .card h2::before { content: ''; width: 4px; height: 14px; background: var(--accent); border-radius: 2px; }
+  label.fld { display: block; font-size: 13px; color: var(--ink2); margin: 14px 0 6px; }
+  input, select { width: 100%; padding: 11px 12px; font-size: 15px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+  .seg button { flex: 1; padding: 10px; border: none; background: #fff; font-size: 14px; color: var(--ink2); }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .chk { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; color: var(--ink2); }
+  .chk input { width: auto; }
+  .btn { width: 100%; margin-top: 18px; padding: 14px; font-size: 16px; letter-spacing: 2px; border: none; border-radius: 11px; background: var(--accent); color: #fff; font-weight: 600; }
+  .btn:active { background: var(--accent2); }
+  .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink2); font-weight: 400; letter-spacing: 1px; }
+  .hidden { display: none !important; }
+  .err { color: var(--accent2); font-size: 13px; text-align: center; margin-top: 12px; }
+
+  /* 一句点评（峰） */
+  .oneliner { background: linear-gradient(135deg,#fffaf0,#f7efdd); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 12px; padding: 16px; margin-top: 14px; font-size: 15px; }
+  .oneliner .tag { font-size: 11px; color: var(--accent); letter-spacing: 2px; }
+  .oneliner .txt { margin-top: 6px; }
+
+  /* 四柱 */
+  .pillars { display: flex; gap: 8px; }
+  .pillar { flex: 1; text-align: center; border: 1px solid var(--line); border-radius: 10px; padding: 8px 4px; background: #fff; }
+  .pillar .pn { font-size: 11px; color: var(--ink2); }
+  .pillar .gz { font-size: 26px; font-weight: 700; line-height: 1.25; margin: 4px 0; }
+  .pillar .ss { font-size: 11px; color: var(--ink2); }
+  .pillar .cang { font-size: 11px; color: #8a8a96; margin-top: 5px; border-top: 1px dashed var(--line); padding-top: 5px; }
+  .pillar.day { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .e-木{color:var(--mu)} .e-火{color:var(--huo)} .e-土{color:var(--tu)} .e-金{color:var(--jin)} .e-水{color:var(--shui)}
+
+  /* 五行条 */
+  .bar { display: flex; align-items: center; gap: 8px; margin: 7px 0; font-size: 13px; }
+  .bar .nm { width: 18px; font-weight: 600; }
+  .bar .track { flex: 1; height: 12px; background: #eee6d4; border-radius: 6px; overflow: hidden; }
+  .bar .fill { height: 100%; border-radius: 6px; }
+  .bar .vl { width: 42px; text-align: right; color: var(--ink2); }
+  .bg-木{background:var(--mu)} .bg-火{background:var(--huo)} .bg-土{background:var(--tu)} .bg-金{background:var(--jin)} .bg-水{background:var(--shui)}
+
+  .stat { display: flex; align-items: baseline; gap: 10px; }
+  .stat .big { font-size: 26px; font-weight: 700; color: var(--accent); }
+  .stat .sub { font-size: 12px; color: var(--ink2); }
+  .badges { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge { font-size: 12px; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--line); color: var(--ink2); }
+  .badge.yes { background: #eaf6ee; border-color: #bfe3c9; color: var(--mu); }
+  .tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .tag-xi { background: #eaf6ee; color: var(--mu); border: 1px solid #bfe3c9; padding: 5px 12px; border-radius: 8px; font-weight: 600; }
+  .tag-ji { background: #f3eef0; color: #97607a; border: 1px solid #e2d2da; padding: 5px 12px; border-radius: 8px; }
+  .kv { font-size: 14px; margin-top: 8px; }
+  .kv b { color: var(--accent); }
+
+  /* 钩子（锁定） */
+  .lock { position: relative; margin-top: 16px; border: 1px dashed var(--accent); border-radius: 12px; padding: 16px; background: repeating-linear-gradient(135deg,#fffdf8,#fffdf8 10px,#fbf6ea 10px,#fbf6ea 20px); }
+  .lock h3 { margin: 0 0 10px; font-size: 15px; }
+  .lock ul { margin: 0; padding-left: 20px; color: var(--ink2); font-size: 14px; }
+  .lock li { margin: 5px 0; }
+  .price { text-align: center; font-size: 13px; color: var(--ink2); margin-top: 12px; }
+  .price b { font-size: 22px; color: var(--accent); }
+  .foot { text-align: center; font-size: 11px; color: #9a958a; margin-top: 20px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="title">
+    <h1>八字 · 五行体检</h1>
+    <p>传统命理文化 · 性格与五行结构参考</p>
+  </div>
+
+  <!-- ① 输入屏 -->
+  <div id="screen-input">
+    <div class="card">
+      <h2>填写出生信息</h2>
+      <label class="fld">性别</label>
+      <div class="seg" id="seg-gender">
+        <button type="button" data-v="male" class="on">男</button>
+        <button type="button" data-v="female">女</button>
+      </div>
+
+      <label class="fld">历法</label>
+      <div class="seg" id="seg-cal">
+        <button type="button" data-v="solar" class="on">阳历(公历)</button>
+        <button type="button" data-v="lunar">农历(阴历)</button>
+      </div>
+
+      <div class="row" style="margin-top:14px">
+        <div><label class="fld" style="margin-top:0">年</label><input id="in-year" type="number" inputmode="numeric" placeholder="1990" /></div>
+        <div><label class="fld" style="margin-top:0">月</label><input id="in-month" type="number" inputmode="numeric" placeholder="1" /></div>
+        <div><label class="fld" style="margin-top:0">日</label><input id="in-day" type="number" inputmode="numeric" placeholder="1" /></div>
+      </div>
+
+      <div class="chk hidden" id="leap-wrap">
+        <input id="in-leap" type="checkbox" /><label for="in-leap">该农历月为闰月</label>
+      </div>
+
+      <label class="fld">时辰</label>
+      <select id="in-hour"></select>
+
+      <button class="btn" id="btn-go">免费生成我的五行体检</button>
+      <div class="err hidden" id="err"></div>
+    </div>
+    <div class="foot">结果即时生成，不保存你的任何信息</div>
+  </div>
+
+  <!-- ② 报告屏 -->
+  <div id="screen-report" class="hidden">
+    <div class="oneliner">
+      <div class="tag">命格速览</div>
+      <div class="txt" id="r-oneliner"></div>
+    </div>
+
+    <div class="card">
+      <h2>四柱八字</h2>
+      <div class="pillars" id="r-pillars"></div>
+      <div class="kv" style="text-align:center;margin-top:10px">日主：<b id="r-daymaster"></b></div>
+    </div>
+
+    <div class="card">
+      <h2>五行能量分布</h2>
+      <div id="r-wuxing"></div>
+    </div>
+
+    <div class="card">
+      <h2>身强弱</h2>
+      <div class="stat"><div class="big" id="r-strength"></div><div class="sub" id="r-ratio"></div></div>
+      <div class="badges" id="r-badges"></div>
+    </div>
+
+    <div class="card">
+      <h2>喜用 · 忌神 · 格局</h2>
+      <div class="kv">喜用五行（宜亲近的方向）</div>
+      <div class="tags" id="r-xi"></div>
+      <div class="kv" style="margin-top:12px">忌神五行（宜避开的方向）</div>
+      <div class="tags" id="r-ji"></div>
+      <div class="kv" style="margin-top:12px" id="r-tiaohou"></div>
+      <div class="kv" id="r-geju"></div>
+    </div>
+
+    <!-- ③ 钩子 -->
+    <div class="lock">
+      <h3>🔒 深度命局报告（即将上线）</h3>
+      <ul>
+        <li>为什么是这些喜用神？如何在生活中趋避</li>
+        <li>事业财运：适合的方向与求财方式</li>
+        <li>感情婚姻：正缘特征与大致应期</li>
+        <li>健康预警：体质弱点与调理建议</li>
+        <li>大运流年：未来 10 年走势起伏</li>
+      </ul>
+      <div class="price">完整报告 <b>¥19.9</b></div>
+      <button class="btn" id="btn-unlock" style="margin-top:12px">我想看完整报告</button>
+    </div>
+
+    <button class="btn ghost" id="btn-back">重新测算</button>
+    <div class="foot" id="r-disclaimer"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  // API 地址：默认本机，?api= 或 localStorage 可覆盖，便于换部署环境
+  var params = new URLSearchParams(location.search);
+  var API = params.get('api') || localStorage.getItem('apiBase') || 'http://localhost:8080/api/v1';
+  if (params.get('api')) localStorage.setItem('apiBase', params.get('api'));
+
+  var SHICHEN = [
+    ['子时 (23-01)', 0], ['丑时 (01-03)', 2], ['寅时 (03-05)', 4], ['卯时 (05-07)', 6],
+    ['辰时 (07-09)', 8], ['巳时 (09-11)', 10], ['午时 (11-13)', 12], ['未时 (13-15)', 14],
+    ['申时 (15-17)', 16], ['酉时 (17-19)', 18], ['戌时 (19-21)', 20], ['亥时 (21-23)', 22]
+  ];
+  var state = { gender: 'male', calendar: 'solar' };
+  var $ = function (id) { return document.getElementById(id); };
+
+  // 初始化时辰下拉（默认午时，多数人记得大概时段）
+  var hourSel = $('in-hour');
+  SHICHEN.forEach(function (s, i) {
+    var o = document.createElement('option');
+    o.value = s[1]; o.textContent = s[0]; if (i === 6) o.selected = true;
+    hourSel.appendChild(o);
+  });
+
+  // segmented 控件
+  function bindSeg(wrapId, key, onChange) {
+    var btns = $(wrapId).querySelectorAll('button');
+    btns.forEach(function (b) {
+      b.onclick = function () {
+        btns.forEach(function (x) { x.classList.remove('on'); });
+        b.classList.add('on'); state[key] = b.dataset.v; if (onChange) onChange();
+      };
+    });
+  }
+  bindSeg('seg-gender', 'gender');
+  bindSeg('seg-cal', 'calendar', function () {
+    $('leap-wrap').classList.toggle('hidden', state.calendar !== 'lunar');
+  });
+
+  function showErr(msg) { var e = $('err'); e.textContent = msg; e.classList.remove('hidden'); }
+  function clearErr() { $('err').classList.add('hidden'); }
+
+  $('btn-go').onclick = function () {
+    clearErr();
+    var birth = {
+      year: parseInt($('in-year').value, 10),
+      month: parseInt($('in-month').value, 10),
+      day: parseInt($('in-day').value, 10),
+      hour: parseInt(hourSel.value, 10),
+      minute: 0,
+      gender: state.gender,
+      calendar: state.calendar,
+      isLeap: $('in-leap').checked
+    };
+    if (!birth.year || !birth.month || !birth.day) { showErr('请填写完整的出生年月日'); return; }
+
+    $('btn-go').textContent = '排盘中…'; $('btn-go').disabled = true;
+    fetch(API + '/analysis/checkup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ birth: birth })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      $('btn-go').textContent = '免费生成我的五行体检'; $('btn-go').disabled = false;
+      if (res.code !== 200) { showErr(res.message || '生成失败'); return; }
+      render(res.data);
+    }).catch(function () {
+      $('btn-go').textContent = '免费生成我的五行体检'; $('btn-go').disabled = false;
+      showErr('连接服务失败：请确认后端已启动（' + API + '）');
+    });
+  };
+
+  function render(d) {
+    $('r-oneliner').textContent = d.oneLiner;
+    $('r-daymaster').textContent = d.dayMaster.gan + d.dayMaster.element;
+
+    // 四柱
+    var names = { year: '年柱', month: '月柱', day: '日柱', hour: '时柱' };
+    var html = '';
+    ['year', 'month', 'day', 'hour'].forEach(function (k) {
+      var p = d.pillars[k];
+      var cang = (p.cang || []).join(' ');
+      html += '<div class="pillar ' + (k === 'day' ? 'day' : '') + '">' +
+        '<div class="pn">' + names[k] + (k === 'day' ? ' · 日主' : '') + '</div>' +
+        '<div class="ss">' + (p.ganShen === '日主' ? '元' : p.ganShen) + '</div>' +
+        '<div class="gz"><span class="e-' + p.ganWuxing + '">' + p.gan + '</span></div>' +
+        '<div class="gz"><span class="e-' + p.zhiWuxing + '">' + p.zhi + '</span></div>' +
+        '<div class="ss">' + p.zhiShen + '</div>' +
+        '<div class="cang">藏 ' + cang + '</div>' +
+      '</div>';
+    });
+    $('r-pillars').innerHTML = html;
+
+    // 五行能量条
+    var sc = d.wuxingScore, order = ['木', '火', '土', '金', '水'];
+    var total = order.reduce(function (s, e) { return s + (sc[e] || 0); }, 0) || 1;
+    var wx = '';
+    order.forEach(function (e) {
+      var pct = Math.round((sc[e] || 0) / total * 100);
+      wx += '<div class="bar"><div class="nm e-' + e + '">' + e + '</div>' +
+        '<div class="track"><div class="fill bg-' + e + '" style="width:' + pct + '%"></div></div>' +
+        '<div class="vl">' + pct + '%</div></div>';
+    });
+    $('r-wuxing').innerHTML = wx;
+
+    // 身强弱
+    $('r-strength').textContent = d.strength.label;
+    $('r-ratio').textContent = '同党占比 ' + Math.round((d.strength.ratio || 0) * 100) + '%';
+    var bd = [['得令', d.strength.deLing], ['得地', d.strength.deDi], ['得势', d.strength.deShi]];
+    $('r-badges').innerHTML = bd.map(function (b) {
+      return '<span class="badge ' + (b[1] ? 'yes' : '') + '">' + b[0] + '：' + (b[1] ? '是' : '否') + '</span>';
+    }).join('');
+
+    // 喜忌 / 调候 / 格局
+    $('r-xi').innerHTML = (d.yongShen.xiShen || []).map(function (e) { return '<span class="tag-xi">' + e + '</span>'; }).join('') || '<span class="sub">无</span>';
+    $('r-ji').innerHTML = (d.yongShen.jiShen || []).map(function (e) { return '<span class="tag-ji">' + e + '</span>'; }).join('') || '<span class="sub">无</span>';
+    var th = d.yongShen.tiaoHou || {};
+    $('r-tiaohou').innerHTML = '调候：' + (th.season || '-') + '月，' + ((th.need && th.need.length) ? ('喜见 <b>' + th.need.join('') + '</b>' + (th.urgent ? '（急用）' : '')) : '无显著寒暖偏向');
+    $('r-geju').innerHTML = '格局：<b>' + d.geju.name + '</b>' + (d.geju.isPure === false ? '（取格欠清纯）' : '');
+
+    $('r-disclaimer').textContent = d.disclaimer;
+
+    $('screen-input').classList.add('hidden');
+    $('screen-report').classList.remove('hidden');
+    window.scrollTo(0, 0);
+  }
+
+  // 钩子：MVP 不真支付，记录付费意愿信号（验证用）
+  $('btn-unlock').onclick = function () {
+    var n = (parseInt(localStorage.getItem('unlockIntent') || '0', 10)) + 1;
+    localStorage.setItem('unlockIntent', n);
+    console.log('[intent] unlock clicked, total=' + n);
+    alert('深度报告即将上线 🙏\n想抢先体验完整版，可联系作者预约。\n（你的这次点击已记录为需求信号）');
+  };
+
+  $('btn-back').onclick = function () {
+    $('screen-report').classList.add('hidden');
+    $('screen-input').classList.remove('hidden');
+    window.scrollTo(0, 0);
+  };
+})();
+</script>
+</body>
+</html>

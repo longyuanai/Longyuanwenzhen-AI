@@ -1,0 +1,72 @@
+<!--pages/index/index.wxml-->
+<view class="container">
+  <!-- 顶部Banner -->
+  <view class="banner">
+    <view class="banner-content">
+      <text class="banner-title">智能八字排盘</text>
+      <text class="banner-desc">专业的命理分析工具</text>
+    </view>
+  </view>
+
+  <!-- 用户信息 -->
+  <view class="user-section card" wx:if="{{hasUserInfo}}">
+    <view class="user-info">
+      <image class="avatar" src="{{userInfo.avatarUrl}}" mode="aspectFill"></image>
+      <view class="user-text">
+        <text class="nickname">{{userInfo.nickName}}</text>
+        <text class="welcome">欢迎回来</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 未登录提示 -->
+  <view class="login-section card" wx:else>
+    <view class="login-tip">
+      <text class="tip-title">欢迎使用智能八字排盘</text>
+      <text class="tip-desc">登录后可保存排盘记录</text>
+    </view>
+    <button class="btn-login" bindtap="getUserProfile" wx:if="{{canIUseGetUserProfile}}">
+      微信授权登录
+    </button>
+  </view>
+
+  <!-- 功能介绍 -->
+  <view class="features card">
+    <view class="title">核心功能</view>
+    <view class="feature-list">
+      <view class="feature-item">
+        <view class="feature-icon">🎯</view>
+        <view class="feature-text">
+          <text class="feature-name">精准排盘</text>
+          <text class="feature-desc">传统算法，准确可靠</text>
+        </view>
+      </view>
+      <view class="feature-item">
+        <view class="feature-icon">🤖</view>
+        <view class="feature-text">
+          <text class="feature-name">AI解读</text>
+          <text class="feature-desc">智能分析，专业解读</text>
+        </view>
+      </view>
+      <view class="feature-item">
+        <view class="feature-icon">📊</view>
+        <view class="feature-text">
+          <text class="feature-name">大运流年</text>
+          <text class="feature-desc">运势分析，人生规划</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 快速开始按钮 -->
+  <view class="action-section">
+    <button class="btn-start" bindtap="goToPaipan">
+      立即排盘
+    </button>
+  </view>
+
+  <!-- 底部说明 -->
+  <view class="footer">
+    <text class="footer-text">传承文化 · 科学解读 · 服务人生</text>
+  </view>
+</view>

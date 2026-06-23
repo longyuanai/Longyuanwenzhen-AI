@@ -1,0 +1,91 @@
+<!--pages/result/result.wxml-->
+<view class="container" wx:if="{{result}}">
+  <!-- 基本信息 -->
+  <view class="info-section card">
+    <view class="info-row">
+      <text class="info-label">出生日期：</text>
+      <text class="info-value">{{result.birthDate}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-label">出生时间：</text>
+      <text class="info-value">{{result.birthTime}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-label">性别：</text>
+      <text class="info-value">{{result.gender === 'male' ? '男' : '女'}}</text>
+    </view>
+  </view>
+
+  <!-- 四柱八字 -->
+  <view class="bazi-section card">
+    <view class="section-title">四柱八字</view>
+    <view class="pillars-container">
+      <view class="pillar-item" wx:for="{{pillars}}" wx:key="name">
+        <view class="pillar-name">{{item.name}}</view>
+        <view class="pillar-content">
+          <view class="pillar-gan">
+            <text class="gan-text">{{item.gan}}</text>
+            <text class="shishen-text">{{item.ganShiShen}}</text>
+          </view>
+          <view class="pillar-divider"></view>
+          <view class="pillar-zhi">
+            <text class="zhi-text">{{item.zhi}}</text>
+            <text class="shishen-text">{{item.zhiShiShen}}</text>
+          </view>
+        </view>
+        <view class="cang-gan" wx:if="{{item.cangGan.length > 0}}">
+          <text class="cang-gan-label">藏干：</text>
+          <text class="cang-gan-value">{{item.cangGan.join(' ')}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 五行信息 -->
+  <view class="wuxing-section card">
+    <view class="section-title">五行配置</view>
+    <view class="wuxing-grid">
+      <view class="wuxing-item">
+        <text class="wuxing-label">年柱：</text>
+        <text class="wuxing-value">{{result.wuxing.yearGan}}{{result.wuxing.yearZhi}}</text>
+      </view>
+      <view class="wuxing-item">
+        <text class="wuxing-label">月柱：</text>
+        <text class="wuxing-value">{{result.wuxing.monthGan}}{{result.wuxing.monthZhi}}</text>
+      </view>
+      <view class="wuxing-item">
+        <text class="wuxing-label">日柱：</text>
+        <text class="wuxing-value">{{result.wuxing.dayGan}}{{result.wuxing.dayZhi}}</text>
+      </view>
+      <view class="wuxing-item">
+        <text class="wuxing-label">时柱：</text>
+        <text class="wuxing-value">{{result.wuxing.hourGan}}{{result.wuxing.hourZhi}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 大运 -->
+  <view class="dayun-section card">
+    <view class="section-title">大运</view>
+    <view class="dayun-info">
+      <text class="dayun-direction">{{result.daYun.isForward ? '顺行' : '逆行'}}</text>
+      <text class="dayun-start">起运年龄：{{result.daYun.startAge}}岁</text>
+    </view>
+    <view class="dayun-list">
+      <view class="dayun-item" wx:for="{{result.daYun.daYunList}}" wx:key="ageRange">
+        <view class="dayun-pillar">{{item.gan}}{{item.zhi}}</view>
+        <view class="dayun-age">{{item.ageRange}}</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 操作按钮 -->
+  <view class="action-section">
+    <button class="btn-analysis" bindtap="goToAnalysis">
+      查看命理解读
+    </button>
+    <button class="btn-repaipan" bindtap="rePaipan">
+      重新排盘
+    </button>
+  </view>
+</view>
