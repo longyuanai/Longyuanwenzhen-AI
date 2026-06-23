@@ -81,6 +81,12 @@
   .price { text-align: center; font-size: 13px; color: var(--ink2); margin-top: 12px; }
   .price b { font-size: 22px; color: var(--accent); }
   .foot { text-align: center; font-size: 11px; color: #9a958a; margin-top: 20px; line-height: 1.7; }
+
+  /* 联系区（变现收口） */
+  .contact { margin-top: 16px; border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: linear-gradient(135deg,#fffaf0,#f7efdd); text-align: center; }
+  .contact-tt { font-size: 13px; color: var(--ink2); }
+  .contact-wx { font-size: 16px; margin-top: 8px; }
+  .contact-wx b { color: var(--accent); letter-spacing: 1px; }
 </style>
 </head>
 <body>
@@ -174,6 +180,13 @@
     </div>
 
     <button class="btn ghost" id="btn-back">重新测算</button>
+
+    <div class="contact" id="contact-box">
+      <div class="contact-tt">想要完整解读 / 校准时辰 / 答疑</div>
+      <div class="contact-wx">微信号：<b id="wx-id"></b></div>
+      <button class="btn" id="btn-copy-wx" style="margin-top:10px">复制微信号</button>
+    </div>
+
     <div class="foot" id="r-disclaimer"></div>
   </div>
 </div>
@@ -193,8 +206,15 @@
   var state = { gender: 'male', calendar: 'solar' };
   var $ = function (id) { return document.getElementById(id); };
 
+  // 微信号：上线前替换为你的真实微信号
+  var WECHAT_ID = 'hjz13550604865';
+
   // 初始化时辰下拉（默认午时，多数人记得大概时段）
+  // 顶部加「不确定/不知道」——命理上缺时柱会让旺衰失真，不假装能算，转为联系校准
   var hourSel = $('in-hour');
+  var unknownOpt = document.createElement('option');
+  unknownOpt.value = 'unknown'; unknownOpt.textContent = '不确定 / 不知道时辰';
+  hourSel.appendChild(unknownOpt);
   SHICHEN.forEach(function (s, i) {
     var o = document.createElement('option');
     o.value = s[1]; o.textContent = s[0]; if (i === 6) o.selected = true;
@@ -221,6 +241,11 @@
 
   $('btn-go').onclick = function () {
     clearErr();
+    // 时辰未知：命理上缺时柱会让身强弱/格局失真，不强行排盘，引导联系校准
+    if (hourSel.value === 'unknown') {
+      showUnknownHour();
+      return;
+    }
     var birth = {
       year: parseInt($('in-year').value, 10),
       month: parseInt($('in-month').value, 10),
@@ -295,18 +320,49 @@
     $('r-geju').innerHTML = '格局：<b>' + d.geju.name + '</b>' + (d.geju.isPure === false ? '（取格欠清纯）' : '');
 
     $('r-disclaimer').textContent = d.disclaimer;
+    $('wx-id').textContent = WECHAT_ID;
 
     $('screen-input').classList.add('hidden');
     $('screen-report').classList.remove('hidden');
     window.scrollTo(0, 0);
   }
 
-  // 钩子：MVP 不真支付，记录付费意愿信号（验证用）
+  $('btn-copy-wx').onclick = copyWechat;
+
+  // 复制微信号到剪贴板（失败则降级为提示手动复制）
+  function copyWechat() {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(WECHAT_ID).then(function () {
+        alert('微信号已复制：' + WECHAT_ID + '\n打开微信「添加朋友」粘贴即可');
+      }).catch(function () {
+        alert('请手动添加微信号：' + WECHAT_ID);
+      });
+    } else {
+      alert('请手动添加微信号：' + WECHAT_ID);
+    }
+  }
+
+  // 时辰未知：转为联系校准入口（命理刚需，也是获客钩子）
+  function showUnknownHour() {
+    var ok = confirm(
+      '时辰对命局影响很大，不确定时直接排盘会让身强弱、格局失真。\n\n' +
+      '可以联系作者，用你的「出生大致时段 + 性格特征」帮你校准时辰，再出准确报告。\n\n' +
+      '点「确定」复制作者微信号：' + WECHAT_ID
+    );
+    if (ok) copyWechat();
+  }
+
+  // 钩子：MVP 不真支付，引导加微信人工承接付费意愿（验证需求 + 收口变现）
   $('btn-unlock').onclick = function () {
     var n = (parseInt(localStorage.getItem('unlockIntent') || '0', 10)) + 1;
     localStorage.setItem('unlockIntent', n);
     console.log('[intent] unlock clicked, total=' + n);
-    alert('深度报告即将上线 🙏\n想抢先体验完整版，可联系作者预约。\n（你的这次点击已记录为需求信号）');
+    var ok = confirm(
+      '深度命局报告（约6000字）¥19.9\n' +
+      '含喜用神趋避、事业财运、感情应期、健康预警、未来10年大运。\n\n' +
+      '点「确定」复制作者微信号：' + WECHAT_ID + '\n添加后发送你的出生信息即可预约。'
+    );
+    if (ok) copyWechat();
   };
 
   $('btn-back').onclick = function () {
