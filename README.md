@@ -23,7 +23,9 @@
 │   └── app.wxss         # 全局样式
 │
 ├── frontend/            # 独立 H5
-│   └── checkup.html     # H5 体检入口(加时辰未知引导 + 微信联系收口)
+│   ├── checkup.html     # H5 体检入口(加时辰未知引导 + 微信联系收口)
+│   ├── checkup.css      # 样式
+│   └── checkup.js       # 脚本(XSS-safe render)
 │
 ├── backend/             # 后端服务
 │   ├── routes/          # 路由(5 个模块)
@@ -34,7 +36,7 @@
 │   │   └── health.js    # 健康检查(聚合 backend + LightRAG)
 │   ├── models/          # 数据模型
 │   ├── middleware/      # 中间件(JWT 鉴权 + CORS 白名单 + IP 限流)
-│   ├── utils/           # 工具函数(排盘/格局/旺衰/喜忌/prompt/RAG/四家投票/微信支付)
+│   ├── utils/           # 工具函数(排盘/格局/旺衰/喜忌/prompt/RAG/四家投票/微信支付/sentry)
 │   ├── config/          # 配置文件
 │   ├── scripts/         # 联调脚本(dev-seed-test-user 自签 JWT + paid 订单)
 │   ├── app.js           # 服务入口
@@ -169,6 +171,11 @@ ALLOWED_ORIGINS=*
 
 # AI 限流开关(1=关;空=开 60 req/min per IP,压测/联调时可临时关)
 RATE_LIMIT_DISABLED=
+
+# Sentry 监控(可选;空=降级到 console.error 写日志,生产前配 DSN 才上报远端)
+SENTRY_DSN=
+SENTRY_TRACES_SAMPLE_RATE=0
+SENTRY_RELEASE=
 ```
 
 ## API接口
@@ -212,7 +219,10 @@ RATE_LIMIT_DISABLED=
 - [x] AI解读集成(OpenAI + LightRAG 古籍引证)
 - [x] 订单路由(创建 / 回调 / 列表 / 详情 / 支付 / 确认)
 - [x] H5 体检入口(`frontend/checkup.html`)
-- [x] 后端测试套件(jest,18 套件 / 148 用例 / ~3.5s 全绿)
+- [x] H5 体检页 CSS/JS 拆分 + render() XSS 硬化(createElement + textContent)
+- [x] CORS 白名单(prod fail-closed)+ AI 类接口 IP 限流(60 req/min)
+- [x] Sentry 监控骨架(`utils/sentry.js`,DSN 为空降级 console,未捕获 promise/exception 兜底)
+- [x] 后端测试套件(jest,20 套件 / 164 用例 / ~4.2s 全绿)
 - [x] AI 网关超时/失败降级本地模板(P0 #30,axios timeout: 5000)
 - [x] 联调脚本(`scripts/dev-seed-test-user.js`)
 

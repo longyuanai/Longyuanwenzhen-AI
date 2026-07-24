@@ -5,7 +5,10 @@ const Router = require('koa-router')
 const bodyParser = require('koa-bodyparser')
 const mongoose = require('mongoose')
 const logger = require('./utils/logger')
+const sentry = require('./utils/sentry')
 const { corsAllow, analysisRateLimit } = require('./middleware/security')
+
+sentry.installProcessHandlers()
 
 // 创建Koa应用
 const app = new Koa()
@@ -36,6 +39,7 @@ app.use(async (ctx, next) => {
     await next()
   } catch (err) {
     logger.error('请求错误:', err)
+    sentry.captureException(err, ctx)
     ctx.status = err.status || 500
     ctx.body = {
       code: ctx.status,
