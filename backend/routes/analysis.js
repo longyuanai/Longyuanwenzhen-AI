@@ -12,6 +12,11 @@ const { authRequired } = require('../middleware/auth')
 const { paipan } = require('../utils/bazi')
 const { analyzeMingju } = require('../utils/mingju')
 const { buildBasicPrompt, buildDeepPrompt } = require('../utils/promptBuilder')
+const { retrieve } = require('../utils/knowledgeRetriever')
+const {
+  buildFourSchoolPrompt,
+  buildFourSchoolQueries
+} = require('../utils/fourSchoolPrompt')
 const { buildOneLiner } = require('../utils/checkupSummary')
 const { Lunar } = require('lunar-javascript')
 
@@ -44,6 +49,18 @@ function pillarView(pp, key) {
 async function hasDeepEntitlement(userId) {
   const [paidOrder, user] = await Promise.all([
     Order.exists({ userId, productType: 'deep_report', status: 'paid' }),
+    User.findById(userId).select('vipLevel vipExpireAt')
+  ])
+  if (paidOrder) return true
+  if (user && user.vipLevel > 0 && (!user.vipExpireAt || user.vipExpireAt > new Date())) return true
+  return false
+}
+
+// 四家并列解读权益校验：买了 four_school 的付费订单 OR 持有有效 VIP。
+// 设计动机：VIP 用户应可享受所有付费档（含更高级的四家解读）。
+async function hasFourSchoolEntitlement(userId) {
+  const [paidOrder, user] = await Promise.all([
+    Order.exists({ userId, productType: 'four_school', status: 'paid' }),
     User.findById(userId).select('vipLevel vipExpireAt')
   ])
   if (paidOrder) return true
@@ -182,6 +199,89 @@ router.post('/deep', authRequired, async (ctx) => {
     logger.error('深度报告错误:', err)
     ctx.status = 500
     ctx.body = { code: 500, message: '报告生成失败', data: null, timestamp: Date.now() }
+  }
+})
+
+/**
+ * 四家并列解读
+ * POST /api/v1/analysis/four-school
+ * body: { baziId, birth: {...} }
+ *
+ * 同一盘由徐乐吾 / 梁湘润 / 袁树珊 / 韦千里 四派方法论并行解读,最后 AI 综合。
+ * 需要付费档 (four_school) 或持有有效 VIP。
+ */
+router.post('/four-school', authRequired, async (ctx) => {
+  try {
+    const { baziId, birth } = ctx.request.body
+    const userId = ctx.state.user.userId
+
+    const entitled = await hasFourSchoolEntitlement(userId)
+    if (!entitled) {
+      ctx.status = 403
+      ctx.body = {
+        code: 403,
+        message: '四家解读需付费解锁，请先完成支付',
+        data: { baziId, type: 'four_school', paid: false },
+        timestamp: Date.now()
+      }
+      return
+    }
+
+    let computed
+    try {
+      computed = computeFromBirth(birth)
+    } catch (e) {
+      if (e.code === 'INVALID_INPUT') return badRequest(ctx, e.message)
+      throw e
+    }
+
+    // 4 家 RAG 并发（不串行 → 总延迟 ≈ max(单家超时),最坏 ≤ 3s）。
+    // 单家降级 (返回 []) 不会阻塞其他家。
+    const queries = buildFourSchoolQueries(computed.mingju)
+    const [xuRefs, liangRefs, yuanRefs, weiRefs] = await Promise.all([
+      retrieve(computed.mingju, { query: queries.xu }),
+      retrieve(computed.mingju, { query: queries.liang }),
+      retrieve(computed.mingju, { query: queries.yuan }),
+      retrieve(computed.mingju, { query: queries.wei })
+    ])
+    const knowledgeBySchool = { xu: xuRefs, liang: liangRefs, yuan: yuanRefs, wei: weiRefs }
+
+    const prompt = buildFourSchoolPrompt(
+      computed.baziStr,
+      computed.dayunStr,
+      computed.mingju,
+      knowledgeBySchool
+    )
+    const content = await generateAnalysis(prompt)
+
+    // 暴露各家的古籍命中数,前端可展示「徐乐吾派(3 处引证)」
+    const sources = {
+      xu: xuRefs.length,
+      liang: liangRefs.length,
+      yuan: yuanRefs.length,
+      wei: weiRefs.length,
+      total: xuRefs.length + liangRefs.length + yuanRefs.length + weiRefs.length
+    }
+
+    logger.info(`生成四家解读: ${baziId}, 用户: ${userId}, 古籍命中 ${sources.total} 处`)
+
+    ctx.body = {
+      code: 200,
+      message: 'success',
+      data: {
+        baziId,
+        content,
+        type: 'four_school',
+        mingju: computed.mingju,
+        schools: ['徐乐吾', '梁湘润', '袁树珊', '韦千里'],
+        sources
+      },
+      timestamp: Date.now()
+    }
+  } catch (err) {
+    logger.error('四家解读错误:', err)
+    ctx.status = 500
+    ctx.body = { code: 500, message: '四家解读生成失败', data: null, timestamp: Date.now() }
   }
 })
 
