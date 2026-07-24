@@ -17,6 +17,7 @@ jest.mock('../../models/User')
 const axios = require('axios')
 const Order = require('../../models/Order')
 const User = require('../../models/User')
+const mongoose = require('mongoose')
 
 jest.mock('../../config', () => ({
   ai: {
@@ -69,6 +70,8 @@ describe('AI fallback (P0 #30) - 三条解读路径', () => {
     jest.clearAllMocks()
     Order.exists.mockResolvedValue(null)
     User.findById.mockReturnValue({ select: () => Promise.resolve(null) })
+    // entitlementRegistry 走 Mongo 路径(readyState=1),让 jest.mock 接管的 Order/User 生效
+    mongoose.connection.readyState = 1
   })
 
   test('basic - axios ECONNABORTED(超时) → 走本地降级', async () => {

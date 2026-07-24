@@ -35,8 +35,8 @@
 │   │   ├── order.js     # 订单路由
 │   │   └── health.js    # 健康检查(聚合 backend + LightRAG)
 │   ├── models/          # 数据模型
-│   ├── middleware/      # 中间件(JWT 鉴权 + CORS 白名单 + IP 限流)
-│   ├── utils/           # 工具函数(排盘/格局/旺衰/喜忌/prompt/RAG/四家投票/微信支付/sentry)
+│   ├── middleware/      # 中间件(JWT 鉴权 envelope/extractToken/auth + CORS 白名单 + IP 限流)
+│   ├── utils/           # 工具函数(排盘/格局/旺衰/喜忌/prompt/RAG/四家投票/微信支付/权益注册表/sentry/本地降级)
 │   ├── config/          # 配置文件
 │   ├── scripts/         # 联调脚本(dev-seed-test-user 自签 JWT + paid 订单)
 │   ├── app.js           # 服务入口
@@ -222,9 +222,12 @@ SENTRY_RELEASE=
 - [x] H5 体检页 CSS/JS 拆分 + render() XSS 硬化(createElement + textContent)
 - [x] CORS 白名单(prod fail-closed)+ AI 类接口 IP 限流(60 req/min)
 - [x] Sentry 监控骨架(`utils/sentry.js`,DSN 为空降级 console,未捕获 promise/exception 兜底)
-- [x] 后端测试套件(jest,20 套件 / 164 用例 / ~4.2s 全绿)
-- [x] AI 网关超时/失败降级本地模板(P0 #30,axios timeout: 5000)
+- [x] 后端测试套件(jest,22 套件 / 183 用例 / ~4.5s 全绿)
+- [x] AI 网关超时/失败降级本地模板(P0 #30,axios timeout: 5000,basic/deep/four-school 三路径各不同模板)
+- [x] 权益检查 in-memory 兜底(P1 #31,utils/entitlementRegistry,无 Mongo 演示不再永远 403)
 - [x] 联调脚本(`scripts/dev-seed-test-user.js`)
+- [x] 中间件分层(`middleware/envelope.js` + `extractToken.js` + `auth.js`)
+- [x] 数据库连接配置层(`config/db.js`,从 app.js 抽出)
 
 ### 🚧 进行中
 - [ ] 微信支付完整集成

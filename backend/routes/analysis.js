@@ -6,8 +6,6 @@ const Router = require('koa-router')
 const axios = require('axios')
 const config = require('../config')
 const logger = require('../utils/logger')
-const Order = require('../models/Order')
-const User = require('../models/User')
 const { authRequired } = require('../middleware/auth')
 const { paipan } = require('../utils/bazi')
 const { analyzeMingju } = require('../utils/mingju')
@@ -23,6 +21,7 @@ const {
   buildDeepFallback,
   buildFourSchoolFallback
 } = require('../utils/localFallback')
+const reg = require('../utils/entitlementRegistry')
 const { Lunar } = require('lunar-javascript')
 
 const AI_HTTP_TIMEOUT_MS = 5000
@@ -53,25 +52,19 @@ function pillarView(pp, key) {
 
 // 付费校验（spec 5.4.1：生成深度报告前必须验证已付费，未付费禁止生成）。
 // 判定为已付费：存在一条 paid 的 deep_report 订单，或持有未过期的 VIP。
+// 走 utils/entitlementRegistry:有 Mongo 走 Mongo(权威),无 Mongo 走 in-memory 兜底
+// → P1 #31 修复点,无 Mongo 演示不再永远 403
 async function hasDeepEntitlement(userId) {
-  const [paidOrder, user] = await Promise.all([
-    Order.exists({ userId, productType: 'deep_report', status: 'paid' }),
-    User.findById(userId).select('vipLevel vipExpireAt')
-  ])
-  if (paidOrder) return true
-  if (user && user.vipLevel > 0 && (!user.vipExpireAt || user.vipExpireAt > new Date())) return true
+  if (await reg.hasOrderPaid(userId, 'deep_report')) return true
+  if (await reg.hasValidVip(userId)) return true
   return false
 }
 
 // 四家并列解读权益校验：买了 four_school 的付费订单 OR 持有有效 VIP。
 // 设计动机：VIP 用户应可享受所有付费档（含更高级的四家解读）。
 async function hasFourSchoolEntitlement(userId) {
-  const [paidOrder, user] = await Promise.all([
-    Order.exists({ userId, productType: 'four_school', status: 'paid' }),
-    User.findById(userId).select('vipLevel vipExpireAt')
-  ])
-  if (paidOrder) return true
-  if (user && user.vipLevel > 0 && (!user.vipExpireAt || user.vipExpireAt > new Date())) return true
+  if (await reg.hasOrderPaid(userId, 'four_school')) return true
+  if (await reg.hasValidVip(userId)) return true
   return false
 }
 

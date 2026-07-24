@@ -18,6 +18,7 @@ jest.mock('../../models/User')
 const axios = require('axios')
 const Order = require('../../models/Order')
 const User = require('../../models/User')
+const mongoose = require('mongoose')
 
 // ai.openai 配置必须存在,否则 generateAnalysis 路径上 axios.post 会因 config 缺失炸
 jest.mock('../../config', () => ({
@@ -76,6 +77,9 @@ beforeEach(() => {
   // 默认 Order/User 没有任何付费记录
   Order.exists.mockResolvedValue(null)
   User.findById.mockReturnValue({ select: jest.fn().mockResolvedValue(null) })
+  // entitlementRegistry 通过 mongoose.connection.readyState 判断是否走 Mongo 路径
+  // readyState=1(connected) → 走 Mongo 分支,被 jest.mock 接管的 Order/User 接管查询
+  mongoose.connection.readyState = 1
 })
 
 describe('POST /four-school - 四家并列解读', () => {

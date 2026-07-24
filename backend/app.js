@@ -76,21 +76,8 @@ router.use('', healthRoutes.routes(), healthRoutes.allowedMethods())
 
 app.use(router.routes()).use(router.allowedMethods())
 
-// 数据库连接
-const connectDB = async () => {
-  try {
-    const mongoUrl = process.env.MONGODB_URL || 'mongodb://localhost:27017/bazi'
-    await mongoose.connect(mongoUrl, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-    })
-    logger.info('MongoDB连接成功')
-    return true
-  } catch (err) {
-    logger.warn('MongoDB连接失败，使用内存存储模式:', err.message)
-    return false
-  }
-}
+// 数据库连接（URI/options 在 backend/config/index.js,封装在 backend/config/db.js）
+const connectDB = require('./config/db').connectMongo
 
 // 启动服务器
 const PORT = process.env.PORT || 8080
