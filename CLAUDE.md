@@ -113,6 +113,10 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 路径 & 调试锚点
 
+- **算法层链路文档**:`docs/algorithm-pipeline.md`(2026-07-25 新增,14 个 utils 文件分工表 + 数据流图 + 防坑清单)
+
+## 路径 & 调试锚点
+
 - 后端日志:`backend/logs/`
 - 配置:`backend/.env`(`backend/.env.example` 是模板)
 - 小程序 baseURL:`miniprogram/utils/request.js` 的 `BASE_URL`
