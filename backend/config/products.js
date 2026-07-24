@@ -19,6 +19,14 @@ const PRODUCTS = Object.freeze({
     productType: 'vip_month',
     name: '月度会员',
     amount: positiveNumber(process.env.PRICE_VIP_MONTH, 19.9)
+  }),
+  // 四家并列解读：徐乐吾 / 梁湘润 / 袁树珊 / 韦千里 四派并行 + AI 综合
+  // 定价高于 deep_report(9.9)，体现「多方法论并列」的产品差异化价值。
+  // 持有月度 VIP 的用户同样可生成（复用 VIP 通行规则）。
+  four_school: Object.freeze({
+    productType: 'four_school',
+    name: '四家并列解读',
+    amount: positiveNumber(process.env.PRICE_FOUR_SCHOOL, 19.9)
   })
 })
 

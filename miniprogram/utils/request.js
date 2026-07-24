@@ -1,6 +1,11 @@
 // utils/request.js - 网络请求封装
+//
+// ⚠️ BASE_URL 配置：当前指向 localhost:3000,但后端默认端口是 8080
+// （config/index.js → port: process.env.PORT || 8080）。
+// 联调时改成 8080,或用环境变量/构建脚本切换。
+// 上线前必须改成 https 真实域名 + 在小程序后台配置合法 request 域名。
 
-const BASE_URL = 'http://localhost:3000/api/v1'  // 本地后端API地址
+const BASE_URL = 'http://localhost:8080/api/v1'  // 对齐后端默认端口
 
 /**
  * 网络请求封装

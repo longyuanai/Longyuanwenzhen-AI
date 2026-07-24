@@ -80,7 +80,7 @@
   height: 70rpx;
   line-height: 70rpx;
   text-align: center;
-  font-size: 28rpx;
+  font-size: 26rpx;
   color: #666;
   border-radius: 50rpx;
   position: relative;
@@ -101,6 +101,10 @@
   font-size: 20rpx;
   padding: 2rpx 10rpx;
   border-radius: 20rpx;
+}
+
+.vip-badge.premium {
+  background: linear-gradient(135deg, #8E54E9 0%, #4776E6 100%);
 }
 
 /* 加载状态 */

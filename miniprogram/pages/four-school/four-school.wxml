@@ -1,0 +1,98 @@
+<!--pages/four-school/four-school.wxml-->
+<view class="container">
+  <!-- 顶部命盘信息 -->
+  <view class="header-card" wx:if="{{baziInfo}}">
+    <view class="header-title">命盘</view>
+    <view class="bazi-string">{{baziInfo}}</view>
+  </view>
+
+  <!-- 加载状态 -->
+  <view class="loading-container" wx:if="{{isLoading}}">
+    <view class="loading-spinner"></view>
+    <text class="loading-text">四家命理大师正在解你的盘…</text>
+    <text class="loading-hint">徐乐吾 · 梁湘润 · 袁树珊 · 韦千里</text>
+  </view>
+
+  <!-- 错误状态 -->
+  <view class="error-container" wx:elif="{{errorMsg}}">
+    <text class="error-text">{{errorMsg}}</text>
+    <button class="btn-retry" bindtap="retry">重试</button>
+  </view>
+
+  <!-- 解读内容 -->
+  <block wx:else>
+    <!-- 古籍命中统计 -->
+    <view class="sources-card" wx:if="{{sources}}">
+      <view class="sources-title">古籍引证</view>
+      <view class="sources-grid">
+        <view class="source-item">
+          <text class="source-school">徐乐吾</text>
+          <text class="source-count">{{sources.xu}}</text>
+        </view>
+        <view class="source-item">
+          <text class="source-school">梁湘润</text>
+          <text class="source-count">{{sources.liang}}</text>
+        </view>
+        <view class="source-item">
+          <text class="source-school">袁树珊</text>
+          <text class="source-count">{{sources.yuan}}</text>
+        </view>
+        <view class="source-item">
+          <text class="source-school">韦千里</text>
+          <text class="source-count">{{sources.wei}}</text>
+        </view>
+      </view>
+      <view class="sources-total">共 {{sources.total}} 处古籍依据</view>
+    </view>
+
+    <!-- 四家解读 + AI 综合 -->
+    <view class="content-card">
+      <rich-text nodes="{{content}}" class="rich-content"></rich-text>
+    </view>
+
+    <!-- 免责声明 -->
+    <view class="disclaimer">
+      本解读由 AI 基于命理古籍与方法论生成,仅供参考与文化学习,不构成任何决策建议。
+    </view>
+  </block>
+
+  <!-- 底部付费入口(零成本:联系客服微信) -->
+  <view class="footer-pay" wx:if="{{!isLoading && !errorMsg}}">
+    <view class="footer-tip">解锁完整版 + 个性化建议</view>
+    <button class="btn-pay" bindtap="showContactModal">联系客服解锁</button>
+  </view>
+</view>
+
+<!-- 联系客服弹窗 -->
+<view class="modal-mask" wx:if="{{showContact}}" bindtap="closeContactModal">
+  <view class="modal-content" catchtap="">
+    <view class="modal-header">
+      <text class="modal-title">四家并列解读 · 付费解锁</text>
+      <view class="modal-close" bindtap="closeContactModal">×</view>
+    </view>
+    <view class="modal-body">
+      <view class="price-info">
+        <text class="price-value">¥19.9</text>
+        <text class="price-sub">/ 次 · 一次性</text>
+      </view>
+      <view class="features">
+        <view class="feature-item">✓ 徐乐吾派 · 格局调候体用</view>
+        <view class="feature-item">✓ 梁湘润派 · 三轨金不换神煞</view>
+        <view class="feature-item">✓ 袁树珊派 · 命宫小限纳音</view>
+        <view class="feature-item">✓ 韦千里派 · 八步法</view>
+        <view class="feature-item">✓ AI 综合 · 共识与分歧</view>
+      </view>
+      <view class="contact-block">
+        <text class="contact-label">添加客服微信</text>
+        <view class="wechat-row" bindtap="copyWechat">
+          <text class="wechat-id">{{contactWechat}}</text>
+          <text class="wechat-copy">点击复制</text>
+        </view>
+        <text class="contact-tip">添加后备注"四家解读",客服会人工开通查看完整版</text>
+      </view>
+    </view>
+    <view class="modal-footer">
+      <button class="btn-cancel" bindtap="closeContactModal">关闭</button>
+    </view>
+  </view>
+</view>

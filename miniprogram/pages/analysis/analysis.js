@@ -216,6 +216,13 @@ ${result.daYun.isForward ? '大运顺行' : '大运逆行'}，起运年龄约${r
     }
   },
 
+  // 跳转到四家并列解读页(产品差异化卖点)
+  goFourSchool() {
+    wx.navigateTo({
+      url: '/pages/four-school/four-school'
+    })
+  },
+
   // 返回排盘结果
   goBack() {
     wx.navigateBack()

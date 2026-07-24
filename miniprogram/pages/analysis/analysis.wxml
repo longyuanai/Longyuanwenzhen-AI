@@ -28,6 +28,10 @@
       <text>深度报告</text>
       <view class="vip-badge" wx:if="{{!isPaid}}">付费</view>
     </view>
+    <view class="tab {{activeTab === 'fourSchool' ? 'active' : ''}}" bindtap="goFourSchool">
+      <text>四家解读</text>
+      <view class="vip-badge premium" wx:if="{{!isPaid}}">¥19.9</view>
+    </view>
   </view>
 
   <!-- 加载状态 -->
