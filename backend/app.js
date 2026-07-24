@@ -53,21 +53,15 @@ const userRoutes = require('./routes/user')
 const baziRoutes = require('./routes/bazi')
 const analysisRoutes = require('./routes/analysis')
 const orderRoutes = require('./routes/order')
+const healthRoutes = require('./routes/health')
 
 router.use('/api/v1/user', userRoutes.routes(), userRoutes.allowedMethods())
 router.use('/api/v1/bazi', baziRoutes.routes(), baziRoutes.allowedMethods())
 router.use('/api/v1/analysis', analysisRoutes.routes(), analysisRoutes.allowedMethods())
 router.use('/api/v1/order', orderRoutes.routes(), orderRoutes.allowedMethods())
 
-// 健康检查
-router.get('/health', (ctx) => {
-  ctx.body = {
-    code: 200,
-    message: 'success',
-    data: { status: 'healthy', timestamp: Date.now() },
-    timestamp: Date.now()
-  }
-})
+// /health（顶级,不挂 /api/v1 前缀；保持向后兼容）
+router.use('', healthRoutes.routes(), healthRoutes.allowedMethods())
 
 app.use(router.routes()).use(router.allowedMethods())
 
