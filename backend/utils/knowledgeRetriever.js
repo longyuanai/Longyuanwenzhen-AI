@@ -17,11 +17,38 @@
 //   LIGHTRAG_TOPK     检索返回条数（默认 5）
 
 const axios = require('axios')
+const crypto = require('crypto')
 
 const DEFAULTS = {
   url: process.env.LIGHTRAG_URL || 'http://127.0.0.1:9621',
   timeout: Number(process.env.LIGHTRAG_TIMEOUT) || 3000,
-  topK: Number(process.env.LIGHTRAG_TOPK) || 5
+  topK: Number(process.env.LIGHTRAG_TOPK) || 5,
+  cacheTtlSec: Number(process.env.LIGHTRAG_CACHE_TTL) || 300
+}
+
+// Redis 客户端懒加载:redis 包未安装或 REDIS_URL 未配置时,缓存层跳过,
+// 原 HTTP 逻辑不受影响。命中失败也不抛错(继续走 HTTP)。
+let _redis = null
+let _redisTried = false
+function getRedis() {
+  if (_redisTried) return _redis
+  _redisTried = true
+  if (!process.env.REDIS_URL) return null
+  try {
+    const { createClient } = require('redis')
+    const client = createClient({ url: process.env.REDIS_URL })
+    client.on('error', () => {}) // 吞错,不污染业务日志
+    client.connect().catch(() => {})
+    _redis = client
+    return client
+  } catch {
+    return null
+  }
+}
+
+function cacheKey(query, topK) {
+  const h = crypto.createHash('sha1').update(`${query}|${topK}`).digest('hex')
+  return `lrag:${h}`
 }
 
 /**
@@ -65,7 +92,7 @@ async function retrieve(mingju, opts = {}) {
     return []
   }
 
-  const { url, timeout, topK } = { ...DEFAULTS, ...opts }
+  const { url, timeout, topK, cacheTtlSec } = { ...DEFAULTS, ...opts }
   // 透传 opts.query:四家并列解读需要各家用自己的「侧重查询语」
   // (徐乐吾/梁湘润/袁树珊/韦千里各家焦点不同),否则 4 家检索
   // 同一 query → 完全重复的 refs,四家差异化卖点消失。
@@ -73,6 +100,24 @@ async function retrieve(mingju, opts = {}) {
   const query = (typeof opts.query === 'string' && opts.query.length > 0)
     ? opts.query
     : buildQuery(mingju)
+
+  // Redis 缓存命中:跳过 HTTP(无 Redis / 命中失败 → 继续走 HTTP)
+  const redis = getRedis()
+  const key = cacheKey(query, topK)
+  if (redis) {
+    try {
+      const cached = await redis.get(key)
+      if (cached) {
+        try {
+          return JSON.parse(cached)
+        } catch {
+          // 损坏缓存,当作未命中
+        }
+      }
+    } catch {
+      // Redis 读失败,继续走 HTTP
+    }
+  }
 
   try {
     // LightRAG 默认 /query 端点：POST { query, mode, top_k, ... }
@@ -84,21 +129,36 @@ async function retrieve(mingju, opts = {}) {
       { timeout, validateStatus: s => s >= 200 && s < 500 }
     )
 
-    if (resp.status !== 200 || !resp.data) return []
-    // LightRAG 返回结构：{ response: '...', references?: [{content, file_path, ...}] }
-    // 我们用 references 数组（如有）；否则把 response 整体作为一条 content。
-    const refs = Array.isArray(resp.data.references) ? resp.data.references : null
-    if (refs && refs.length) {
-      return refs.slice(0, topK).map(r => ({
-        content: r.content || r.text || '',
-        source: r.file_path || r.source || undefined,
-        score: typeof r.score === 'number' ? r.score : undefined
-      }))
+    let result = []
+    if (resp.status !== 200 || !resp.data) {
+      result = []
+    } else {
+      // LightRAG 返回结构：{ response: '...', references?: [{content, file_path, ...}] }
+      // 我们用 references 数组（如有）；否则把 response 整体作为一条 content。
+      const refs = Array.isArray(resp.data.references) ? resp.data.references : null
+      if (refs && refs.length) {
+        result = refs.slice(0, topK).map(r => ({
+          content: r.content || r.text || '',
+          source: r.file_path || r.source || undefined,
+          score: typeof r.score === 'number' ? r.score : undefined
+        }))
+      } else if (resp.data.response) {
+        result = [{ content: resp.data.response, source: 'LightRAG' }]
+      } else {
+        result = []
+      }
     }
-    if (resp.data.response) {
-      return [{ content: resp.data.response, source: 'LightRAG' }]
+
+    // 写缓存(成功 + 非空结果 → 缓存 5min;空结果不缓存避免 LightRAG 恢复期脏读)
+    if (redis && result.length > 0) {
+      try {
+        await redis.set(key, JSON.stringify(result), { EX: cacheTtlSec })
+      } catch {
+        // 写失败不影响返回
+      }
     }
-    return []
+
+    return result
   } catch (err) {
     // 网络错/超时/服务挂——按约定降级，不抛
     // 调用方如果想知道降级原因，可读 module 暴露的 lastError

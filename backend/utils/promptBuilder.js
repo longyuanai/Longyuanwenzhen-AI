@@ -108,10 +108,43 @@ function buildDeepPrompt(baziStr, dayunStr, mingju, knowledgeContext) {
   ].join('\n')
 }
 
+// 日主行匹配正则:容许 "日主:甲木" / "日主为甲木" / "日主:甲" 后跟任意位置五行字符
+const RI_ZHU_PATTERN = /日主[为:]?\s*([甲乙丙丁戊己庚辛壬癸])([金木水火土])?/g
+
+/**
+ * AI 输出解析校验:从 AI content 里提取"日主"声明,与 mingju.dayMaster 比对。
+ * 不一致时 logger.warn 但仍返原 content(防御性日志,不影响用户体验)。
+ *
+ * @param {object} mingju  analyzeMingju() 返回对象
+ * @param {string} content AI 返回文本
+ * @param {object} [logger] 可选 logger;若不传走 console.warn
+ * @returns {{ ok: boolean, mismatch: string|null, content: string }}
+ */
+function validateAiOutput(mingju, content, logger) {
+  const log = logger || { warn: (msg) => console.warn(msg) }
+  const expected = `${mingju.dayMaster.gan}${mingju.dayMaster.element}`
+  const expectedGanOnly = mingju.dayMaster.gan
+  const matches = []
+  let m
+  RI_ZHU_PATTERN.lastIndex = 0
+  while ((m = RI_ZHU_PATTERN.exec(content)) !== null) {
+    matches.push(`${m[1]}${m[2] || ''}`)
+  }
+  if (matches.length === 0) {
+    return { ok: true, mismatch: null, content }
+  }
+  const mismatch = matches.find((decl) => decl !== expected && decl !== expectedGanOnly) || null
+  if (mismatch) {
+    log.warn(`[AI 校验] 日主声明 "${mismatch}" 与系统结论 "${expected}" 不符;以系统为准`)
+  }
+  return { ok: mismatch === null, mismatch, content }
+}
+
 module.exports = {
   formatMingliFacts,
   formatKnowledgeContext,
   buildBasicPrompt,
   buildDeepPrompt,
+  validateAiOutput,
   COMMON_RULES
 }

@@ -171,3 +171,86 @@ describe('healthCheck - 服务探活', () => {
     expect(await healthCheck({ url: MOCK_URL })).toBe(false)
   })
 })
+
+describe('Redis 缓存层', () => {
+  // mock redis 模块,让 getRedis() 命中 _redis
+  const fakeRedis = {
+    get: jest.fn(),
+    set: jest.fn(),
+    connect: jest.fn().mockResolvedValue(undefined),
+    on: jest.fn()
+  }
+  beforeAll(() => {
+    process.env.REDIS_URL = 'redis://test'
+    jest.doMock('redis', () => ({
+      createClient: () => fakeRedis
+    }))
+  })
+  afterAll(() => {
+    delete process.env.REDIS_URL
+    jest.resetModules()
+  })
+  beforeEach(() => {
+    fakeRedis.get.mockReset()
+    fakeRedis.set.mockReset()
+    jest.resetModules()
+  })
+
+  test('缓存命中 → 跳过 HTTP,直接返回缓存数组', async () => {
+    fakeRedis.get.mockResolvedValue(JSON.stringify([{ content: 'cached-ref', source: 'cached-src' }]))
+    axios.post.mockResolvedValue({ status: 200, data: { response: 'fresh' } })
+    // 用 redis 重新 require 知识检索模块,触发 getRedis() 走 mock
+    jest.isolateModules(() => {
+      const { retrieve: r } = require('../knowledgeRetriever')
+      return r(mingju, { url: MOCK_URL, query: 'cache-test-q1' }).then((result) => {
+        expect(result).toEqual([{ content: 'cached-ref', source: 'cached-src' }])
+        expect(axios.post).not.toHaveBeenCalled()
+      })
+    })
+  })
+
+  test('缓存未命中 → HTTP 后写缓存', async () => {
+    fakeRedis.get.mockResolvedValue(null)
+    axios.post.mockResolvedValue({
+      status: 200,
+      data: {
+        references: [{ content: 'fresh-ref', file_path: 'src-x' }]
+      }
+    })
+    fakeRedis.set.mockResolvedValue(undefined)
+    jest.isolateModules(() => {
+      const isolatedAxios = require('axios')
+      jest.spyOn(isolatedAxios, 'post').mockResolvedValue({
+        status: 200,
+        data: { references: [{ content: 'fresh-ref', file_path: 'src-x' }] }
+      })
+      const { retrieve: r } = require('../knowledgeRetriever')
+      return r(mingju, { url: MOCK_URL, query: 'cache-test-q2' }).then((result) => {
+        expect(result).toEqual([{ content: 'fresh-ref', source: 'src-x' }])
+        expect(isolatedAxios.post).toHaveBeenCalled()
+        expect(fakeRedis.set).toHaveBeenCalledWith(
+          expect.stringMatching(/^lrag:[a-f0-9]{40}$/),
+          JSON.stringify(result),
+          { EX: 300 }
+        )
+      })
+    })
+  })
+
+  test('缓存命中 JSON 损坏 → 当未命中处理', async () => {
+    fakeRedis.get.mockResolvedValue('not-json{{{')
+    axios.post.mockResolvedValue({ status: 200, data: { response: 'fallback' } })
+    fakeRedis.set.mockResolvedValue(undefined)
+    jest.isolateModules(() => {
+      const isolatedAxios = require('axios')
+      jest.spyOn(isolatedAxios, 'post').mockResolvedValue({
+        status: 200, data: { response: 'fallback' }
+      })
+      const { retrieve: r } = require('../knowledgeRetriever')
+      return r(mingju, { url: MOCK_URL, query: 'cache-test-q3' }).then((result) => {
+        expect(result).toEqual([{ content: 'fallback', source: 'LightRAG' }])
+        expect(isolatedAxios.post).toHaveBeenCalled()
+      })
+    })
+  })
+})
