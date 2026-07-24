@@ -206,7 +206,8 @@ LIGHTRAG_URL=http://localhost:9621
 - [x] AI解读集成(OpenAI + LightRAG 古籍引证)
 - [x] 订单路由(创建 / 回调 / 列表 / 详情 / 支付 / 确认)
 - [x] H5 体检入口(`frontend/checkup.html`)
-- [x] 后端测试套件(jest,16 套件 / 130 用例)
+- [x] 后端测试套件(jest,18 套件 / 148 用例 / ~3.5s 全绿)
+- [x] AI 网关超时/失败降级本地模板(P0 #30,axios timeout: 5000)
 - [x] 联调脚本(`scripts/dev-seed-test-user.js`)
 
 ### 🚧 进行中
