@@ -7,9 +7,10 @@ const axios = require('axios')
 const config = require('../config')
 const logger = require('../utils/logger')
 const { authRequired } = require('../middleware/auth')
+const { antiBrush, quotaGuard } = require('../middleware/access')
 const { paipan } = require('../utils/bazi')
 const { analyzeMingju } = require('../utils/mingju')
-const { buildBasicPrompt, buildDeepPrompt } = require('../utils/promptBuilder')
+const { buildBasicPrompt, buildDeepPrompt, validateAiOutput } = require('../utils/promptBuilder')
 const { retrieve } = require('../utils/knowledgeRetriever')
 const {
   buildFourSchoolPrompt,
@@ -119,7 +120,9 @@ async function generateAnalysis(type, prompt, computed) {
         }
       }
     )
-    return response.data.choices[0].message.content
+    const raw = response.data.choices[0].message.content
+    validateAiOutput(computed.mingju, raw, logger)
+    return raw
   } catch (err) {
     logger.warn(`AI生成失败(${type}), 降级到本地模板:`, err.message)
     if (type === 'basic') return buildBasicFallback(computed)
@@ -139,7 +142,7 @@ function badRequest(ctx, message) {
  * POST /api/v1/analysis/basic
  * body: { baziId, birth: {year,month,day,hour,minute,gender} }
  */
-router.post('/basic', async (ctx) => {
+router.post('/basic', antiBrush({ dim: 'analysis.basic', max: 60 }), async (ctx) => {
   try {
     const { baziId, birth } = ctx.request.body
     let computed
@@ -172,7 +175,7 @@ router.post('/basic', async (ctx) => {
  * POST /api/v1/analysis/deep
  * body: { baziId, birth: {...} }
  */
-router.post('/deep', authRequired, async (ctx) => {
+router.post('/deep', authRequired, quotaGuard({ dim: 'analysis.deep', max: 5 }), async (ctx) => {
   try {
     const { baziId, birth } = ctx.request.body
     const userId = ctx.state.user.userId
@@ -223,7 +226,7 @@ router.post('/deep', authRequired, async (ctx) => {
  * 同一盘由徐乐吾 / 梁湘润 / 袁树珊 / 韦千里 四派方法论并行解读,最后 AI 综合。
  * 需要付费档 (four_school) 或持有有效 VIP。
  */
-router.post('/four-school', authRequired, async (ctx) => {
+router.post('/four-school', authRequired, quotaGuard({ dim: 'analysis.four_school', max: 3 }), async (ctx) => {
   try {
     const { baziId, birth } = ctx.request.body
     const userId = ctx.state.user.userId
@@ -303,7 +306,7 @@ router.post('/four-school', authRequired, async (ctx) => {
  * POST /api/v1/analysis/checkup
  * body: { birth: {year,month,day,hour,minute,gender,calendar?:'solar'|'lunar',isLeap?} }
  */
-router.post('/checkup', async (ctx) => {
+router.post('/checkup', antiBrush({ dim: 'analysis.checkup', max: 120 }), async (ctx) => {
   try {
     let { birth } = ctx.request.body
     try {

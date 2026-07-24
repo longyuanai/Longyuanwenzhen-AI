@@ -225,7 +225,7 @@ SENTRY_RELEASE=
 - [x] 后端测试套件(jest,22 套件 / 183 用例 / ~4.5s 全绿)
 - [x] AI 网关超时/失败降级本地模板(P0 #30,axios timeout: 5000,basic/deep/four-school 三路径各不同模板)
 - [x] 权益检查 in-memory 兜底(P1 #31,utils/entitlementRegistry,无 Mongo 演示不再永远 403)
-- [x] 联调脚本(`scripts/dev-seed-test-user.js`)
+- [x] 联调脚本(`scripts/dev-seed-test-user.js`,`npm run seed:test` 一键跑)
 - [x] 中间件分层(`middleware/envelope.js` + `extractToken.js` + `auth.js`)
 - [x] 数据库连接配置层(`config/db.js`,从 app.js 抽出)
 
