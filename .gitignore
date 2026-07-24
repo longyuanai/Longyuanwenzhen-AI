@@ -34,3 +34,10 @@ Thumbs.db
 # ---- 工具缓存 ----
 .cache/
 .temp/
+
+# ---- 大型二进制分发包(用 bazi-skill-dist/ 目录代替)----
+*.zip
+!miniprogram_npm/**/*.zip
+
+# ---- LightRAG 索引构建产物(由 bazi-skill-dist/scripts/build_kg.py 生成)----
+bazi-skill-dist/lightrag/merged.json
