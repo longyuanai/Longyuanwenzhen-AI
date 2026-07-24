@@ -3,25 +3,32 @@ require('dotenv').config()
 const Koa = require('koa')
 const Router = require('koa-router')
 const bodyParser = require('koa-bodyparser')
-const cors = require('koa-cors')
 const mongoose = require('mongoose')
 const logger = require('./utils/logger')
+const { corsAllow, analysisRateLimit } = require('./middleware/security')
 
 // 创建Koa应用
 const app = new Koa()
 const router = new Router()
 
 // 中间件配置
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  headers: ['Content-Type', 'Authorization']
-}))
+// CORS 白名单（读 .env ALLOWED_ORIGINS），生产 fail-closed；开发兜底放行
+app.use(
+  corsAllow({
+    origins: process.env.ALLOWED_ORIGINS,
+    isProd: process.env.NODE_ENV === 'production'
+  })
+)
 
 app.use(bodyParser({
   jsonLimit: '10mb',
   formLimit: '10mb'
 }))
+
+// AI 类接口限流：60 req/min per IP（可被 RATE_LIMIT_DISABLED=1 关掉做压测）
+if (process.env.RATE_LIMIT_DISABLED !== '1') {
+  app.use(analysisRateLimit())
+}
 
 // 错误处理中间件
 app.use(async (ctx, next) => {

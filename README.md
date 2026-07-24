@@ -33,7 +33,7 @@
 │   │   ├── order.js     # 订单路由
 │   │   └── health.js    # 健康检查(聚合 backend + LightRAG)
 │   ├── models/          # 数据模型
-│   ├── middleware/      # 中间件(JWT 鉴权)
+│   ├── middleware/      # 中间件(JWT 鉴权 + CORS 白名单 + IP 限流)
 │   ├── utils/           # 工具函数(排盘/格局/旺衰/喜忌/prompt/RAG/四家投票/微信支付)
 │   ├── config/          # 配置文件
 │   ├── scripts/         # 联调脚本(dev-seed-test-user 自签 JWT + paid 订单)
@@ -163,6 +163,12 @@ JWT_SECRET=your_jwt_secret
 
 # RAG 配置(LightRAG 端点,可选;挂了不影响产品解读,只是没引证)
 LIGHTRAG_URL=http://localhost:9621
+
+# CORS 白名单(逗号分隔;'*' 全放;生产建议白名单+NODE_ENV=production 实现 fail-closed)
+ALLOWED_ORIGINS=*
+
+# AI 限流开关(1=关;空=开 60 req/min per IP,压测/联调时可临时关)
+RATE_LIMIT_DISABLED=
 ```
 
 ## API接口
