@@ -18,7 +18,14 @@ const {
   buildFourSchoolQueries
 } = require('../utils/fourSchoolPrompt')
 const { buildOneLiner } = require('../utils/checkupSummary')
+const {
+  buildBasicFallback,
+  buildDeepFallback,
+  buildFourSchoolFallback
+} = require('../utils/localFallback')
 const { Lunar } = require('lunar-javascript')
+
+const AI_HTTP_TIMEOUT_MS = 5000
 
 const router = new Router()
 
@@ -88,8 +95,17 @@ function computeFromBirth(birth) {
 
 /**
  * 调用AI生成解读
+ *
+ * 三道防线：
+ *   1. axios timeout=5s（防 AI 网关假死,占位 key 触发 21s 假死的根因）
+ *   2. catch 走本地降级模板(基本/深度/四家并列各自不同)
+ *   3. 降级内容开头显式标注「本地解读模板」,让用户知情
+ *
+ * @param {string} type     'basic' | 'deep' | 'four-school'
+ * @param {string} prompt   提示词
+ * @param {object} computed { baziStr, dayunStr, mingju } 供降级模板使用
  */
-async function generateAnalysis(prompt) {
+async function generateAnalysis(type, prompt, computed) {
   try {
     const response = await axios.post(
       `${config.ai.openai.baseUrl}/chat/completions`,
@@ -103,6 +119,7 @@ async function generateAnalysis(prompt) {
         max_tokens: 2000
       },
       {
+        timeout: AI_HTTP_TIMEOUT_MS,
         headers: {
           Authorization: `Bearer ${config.ai.openai.apiKey}`,
           'Content-Type': 'application/json'
@@ -111,7 +128,10 @@ async function generateAnalysis(prompt) {
     )
     return response.data.choices[0].message.content
   } catch (err) {
-    logger.error('AI生成错误:', err)
+    logger.warn(`AI生成失败(${type}), 降级到本地模板:`, err.message)
+    if (type === 'basic') return buildBasicFallback(computed)
+    if (type === 'deep') return buildDeepFallback(computed)
+    if (type === 'four-school') return buildFourSchoolFallback(computed)
     return '命理解读生成中，请稍后再试。'
   }
 }
@@ -138,7 +158,7 @@ router.post('/basic', async (ctx) => {
     }
 
     const prompt = buildBasicPrompt(computed.baziStr, computed.mingju)
-    const content = await generateAnalysis(prompt)
+    const content = await generateAnalysis('basic', prompt, computed)
     logger.info(`生成基础解读: ${baziId}`)
 
     ctx.body = {
@@ -186,7 +206,7 @@ router.post('/deep', authRequired, async (ctx) => {
     }
 
     const prompt = buildDeepPrompt(computed.baziStr, computed.dayunStr, computed.mingju)
-    const content = await generateAnalysis(prompt)
+    const content = await generateAnalysis('deep', prompt, computed)
     logger.info(`生成深度报告: ${baziId}, 用户: ${userId}`)
 
     ctx.body = {
@@ -252,7 +272,7 @@ router.post('/four-school', authRequired, async (ctx) => {
       computed.mingju,
       knowledgeBySchool
     )
-    const content = await generateAnalysis(prompt)
+    const content = await generateAnalysis('four-school', prompt, computed)
 
     // 暴露各家的古籍命中数,前端可展示「徐乐吾派(3 处引证)」
     const sources = {
