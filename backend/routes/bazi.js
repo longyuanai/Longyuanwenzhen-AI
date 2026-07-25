@@ -2,6 +2,7 @@
 const Router = require('koa-router')
 const logger = require('../utils/logger')
 const { paipan } = require('../utils/bazi')
+const { authRequired } = require('../middleware/auth')
 
 const router = new Router()
 
@@ -95,25 +96,16 @@ router.post('/paipan', async (ctx) => {
 /**
  * 获取排盘历史
  * GET /api/v1/bazi/history
+ *
+ * 此前没挂 authRequired，却读 ctx.state.user?.userId —— 应用里没有全局 JWT
+ * 中间件，这个字段永远是 undefined，接口恒返 401。现在按文档挂上鉴权。
+ *
+ * ⚠️ 未实现持久化：排盘结果目前不落库（没有 Bazi 模型，baziId 是
+ * `bazi_${Date.now()}` 用完即弃），所以这里只能返回空数组。要真正支持历史，
+ * 需要先加排盘记录模型并在 /paipan 里写库。
  */
-router.get('/history', async (ctx) => {
+router.get('/history', authRequired, async (ctx) => {
   try {
-    const userId = ctx.state.user?.userId
-
-    if (!userId) {
-      ctx.status = 401
-      ctx.body = {
-        code: 401,
-        message: '未授权',
-        data: null,
-        timestamp: Date.now()
-      }
-      return
-    }
-
-    // 这里应该从数据库查询用户的排盘历史
-    // 简化处理，返回空数组
-
     ctx.body = {
       code: 200,
       message: 'success',

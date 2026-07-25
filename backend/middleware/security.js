@@ -9,7 +9,9 @@
 //
 // 注意：in-memory 限流在多实例下不精确（每实例各自计数），但比无好；生产化
 // 时换 Redis（依赖已在 package.json）即可，函数签名保持不变。
-const { logger } = require('../utils/logger')
+// utils/logger 直接导出 { info, debug, warn, error, trace }，不要解构出 logger 键
+// （曾误写成 const { logger } = ...，prod 白名单为空时 logger.warn 抛 TypeError → 500）
+const logger = require('../utils/logger')
 
 function parseList(raw) {
   if (!raw) return []

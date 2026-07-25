@@ -260,6 +260,33 @@ function getDaYun(gender, yearGan, monthPillar, birthYear, birthMonth) {
 }
 
 /**
+ * 把排盘结果转成后端解读接口要的 birth 请求体。
+ *
+ * 后端 routes/analysis.js 的 computeFromBirth() 只认
+ * { year, month, day, hour, minute, gender }，并会用这些字段在服务端
+ * 重新排盘（服务端权威，不信任客户端算出的四柱/论断）。此前各页面直接把
+ * { bazi, dayGan, wuxing } 发过去，后端一律返回 400「缺少出生信息」。
+ *
+ * @param {object} result paipan() 的返回值（含 input 字段）
+ * @returns {object|null} birth 请求体；input 缺失或不完整时返回 null
+ */
+function buildBirthPayload(result) {
+  const input = (result && result.input) || {}
+  const { year, month, day, hour } = input
+  if ([year, month, day, hour].some((v) => typeof v !== 'number' || isNaN(v))) {
+    return null
+  }
+  return {
+    year: year,
+    month: month,
+    day: day,
+    hour: hour,
+    minute: 0,
+    gender: input.gender || 'male'
+  }
+}
+
+/**
  * 完整的八字排盘
  * @param {object} params - 排盘参数
  * @returns {object} 排盘结果
@@ -361,5 +388,6 @@ module.exports = {
   getShiShen,
   getCangGan,
   getDaYun,
-  paipan
+  paipan,
+  buildBirthPayload
 }

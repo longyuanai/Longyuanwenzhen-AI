@@ -21,6 +21,15 @@ const UserSchema = new Schema({
     type: String,
     default: ''
   },
+  // 角色。middleware/access.js 的 roleRequired / quotaGuard 依赖它做门槛与
+  // admin 绕过；此前 User 上没有该字段、JWT 里也不带，导致这两个中间件的
+  // 角色分支永远走不到。admin 需人工在库里改，不对外开放任何提权入口。
+  role: {
+    type: String,
+    default: 'user',
+    enum: ['user', 'vip', 'admin'],
+    index: true
+  },
   vipLevel: {
     type: Number,
     default: 0,

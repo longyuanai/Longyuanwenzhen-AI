@@ -32,7 +32,13 @@ async function authRequired(ctx, next) {
       ctx.body = envelope(401, '登录态无效')
       return
     }
-    ctx.state.user = { userId: String(payload.userId), openid: payload.openid }
+    // role 必须回填，否则 access.js 的 roleRequired / admin 绕过永远走不到。
+    // 只信任签发时写进 token 的角色，缺省一律降级为最低权限 'user'。
+    ctx.state.user = {
+      userId: String(payload.userId),
+      openid: payload.openid,
+      role: payload.role || 'user'
+    }
     await next()
   } catch (err) {
     ctx.status = 401

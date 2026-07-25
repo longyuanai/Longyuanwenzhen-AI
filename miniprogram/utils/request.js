@@ -1,11 +1,27 @@
 // utils/request.js - 网络请求封装
 //
-// ⚠️ BASE_URL 配置：当前指向 localhost:3000,但后端默认端口是 8080
-// （config/index.js → port: process.env.PORT || 8080）。
-// 联调时改成 8080,或用环境变量/构建脚本切换。
-// 上线前必须改成 https 真实域名 + 在小程序后台配置合法 request 域名。
+// ⚠️ BASE_URL 上线前必须改成 https 真实域名 + 在小程序后台配置合法 request 域名。
+// 当前 8080 对齐后端默认端口（config/index.js → port: process.env.PORT || 8080）。
+//
+// ⚠️ url 传参约定：BASE_URL 已经包含 /api/v1，各页面只写 '/analysis/basic'
+// 这样的业务路径。曾有页面写成 '/api/v1/analysis/basic'，拼出
+// /api/v1/api/v1/analysis/basic 全部 404，且被上层 catch 静默降级掩盖了很久。
+// normalizePath() 会剥掉重复前缀并告警，属兜底，不是让你继续写全路径的许可。
 
-const BASE_URL = 'http://localhost:8080/api/v1'  // 对齐后端默认端口
+const API_PREFIX = '/api/v1'
+const BASE_URL = 'http://localhost:8080' + API_PREFIX
+
+// 剥掉误带的 /api/v1 前缀，避免与 BASE_URL 拼成双前缀
+function normalizePath(url) {
+  let path = url || ''
+  if (path.indexOf(API_PREFIX + '/') === 0) {
+    path = path.slice(API_PREFIX.length)
+    console.warn(
+      `[request] url 不要带 ${API_PREFIX} 前缀（BASE_URL 已包含），已自动修正: ${url} -> ${path}`
+    )
+  }
+  return path
+}
 
 /**
  * 网络请求封装
@@ -26,7 +42,7 @@ function request(options) {
     }
 
     wx.request({
-      url: BASE_URL + options.url,
+      url: BASE_URL + normalizePath(options.url),
       method: options.method || 'GET',
       data: options.data || {},
       header: {

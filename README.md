@@ -215,12 +215,18 @@ const BASE_URL = 'https://your-domain.com/api/v1'
 #### 后端配置
 编辑 `backend/.env` 文件：
 ```env
-# 微信小程序配置
+# 微信小程序配置(变量名以 backend/.env.example 为准)
 WX_APPID=your_appid
 WX_SECRET=your_secret
 
-# AI配置
+# 微信支付(不配 WXPAY_API_KEY 时 /order/callback 一律 503 拒绝,不会误判已支付)
+WXPAY_MCHID=your_mchid
+WXPAY_API_KEY=your_pay_api_key
+
+# AI配置(BASE_URL / MODEL 可选,用于切自建网关或换模型)
 OPENAI_API_KEY=your_api_key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4
 
 # 数据库配置
 MONGODB_URL=mongodb://localhost:27017/bazi
@@ -279,7 +285,7 @@ cd backend && npm run seed:friends:10
 
 ### 排盘接口
 - `POST /api/v1/bazi/paipan` - 生成八字排盘(免费)
-- `GET /api/v1/bazi/history` - 查询排盘历史(鉴权)
+- `GET /api/v1/bazi/history` - 查询排盘历史(鉴权;**排盘结果尚未落库,当前恒返空数组**)
 
 ### 解读接口
 - `POST /api/v1/analysis/basic` - 基础解读(免费)

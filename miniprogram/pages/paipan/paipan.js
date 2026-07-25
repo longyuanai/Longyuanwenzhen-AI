@@ -148,8 +148,10 @@ Page({
   onShareAppMessage() {
     return {
       title: '智能八字排盘 - 专业的命理分析工具',
-      path: '/pages/index/index',
-      imageUrl: '/assets/images/share.png'
+      path: '/pages/index/index'
+      // imageUrl 暂不指定：assets/images/share.svg 是设计稿，微信分享图只认
+      // png/jpg。补出 1200x630 的 share.png 后在此填 '/assets/images/share.png'，
+      // 未指定时微信自动截取页面上部，不会出现加载不到的空白图。
     }
   }
 })

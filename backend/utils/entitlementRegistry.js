@@ -18,7 +18,13 @@
 const Order = require('../models/Order')
 const User = require('../models/User')
 
-// userId(string) -> { productType: true }
+// Mongo 查询结果的缓存存活时间。此前命中即永久缓存 true，退款/撤单/管理员
+// 撤销权益后进程内永远查不回来（只能重启）。有 Mongo 时缓存只作为降低查询
+// 频率的短期视图，过期后重新回源；无 Mongo 时才是唯一权益来源。
+const MONGO_CACHE_TTL_MS = Number(process.env.ENTITLEMENT_CACHE_TTL_MS) || 60000
+
+// userId(string) -> { productType: expiresAt(number) | Infinity }
+// Infinity 表示由 registerOrderPaid 直接注入（无 Mongo 兜底/dev-seed），不过期
 const paidOrders = new Map()
 // userId(string) -> Date (到期时间)
 const vipExpireAt = new Map()
@@ -28,15 +34,31 @@ function hasMongo() {
   return require('mongoose').connection.readyState === 1
 }
 
+function cachedPaid(userId, productType) {
+  const entry = paidOrders.get(userId)
+  if (!entry) return false
+  const exp = entry[productType]
+  if (exp === undefined) return false
+  if (exp !== Infinity && exp <= Date.now()) {
+    delete entry[productType]
+    return false
+  }
+  return true
+}
+
+function cachePaid(userId, productType, expiresAt) {
+  const m = paidOrders.get(userId) || {}
+  m[productType] = expiresAt
+  paidOrders.set(userId, m)
+}
+
 async function hasOrderPaid(userId, productType) {
-  if (paidOrders.get(userId)?.[productType]) return true
+  if (cachedPaid(userId, productType)) return true
   if (!hasMongo()) return false
   try {
     const hit = await Order.exists({ userId, productType, status: 'paid' })
     if (hit) {
-      const m = paidOrders.get(userId) || {}
-      m[productType] = true
-      paidOrders.set(userId, m)
+      cachePaid(userId, productType, Date.now() + MONGO_CACHE_TTL_MS)
       return true
     }
     return false
@@ -63,10 +85,15 @@ async function hasValidVip(userId) {
 }
 
 async function registerOrderPaid(userId, productType) {
-  const m = paidOrders.get(userId) || {}
-  m[productType] = true
-  paidOrders.set(userId, m)
+  // 直接注入的权益不设过期：无 Mongo 兜底模式下这是唯一来源，过期就没了。
+  cachePaid(String(userId), productType, Infinity)
   // 真实场景:Order.status = 'paid' 已由 routes/order.js 回调里写,Mongo 这里不动
+}
+
+// 撤销某用户某档权益的内存缓存（退款 / 管理员撤销后调用，让下次查询回源 Mongo）
+function revokeOrderPaid(userId, productType) {
+  const entry = paidOrders.get(String(userId))
+  if (entry) delete entry[productType]
 }
 
 // grantVip: 给 userId 续期 VIP(days 毫秒数)
@@ -99,6 +126,7 @@ module.exports = {
   hasOrderPaid,
   hasValidVip,
   registerOrderPaid,
+  revokeOrderPaid,
   grantVip,
   _reset
 }

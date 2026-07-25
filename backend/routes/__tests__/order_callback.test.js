@@ -3,8 +3,12 @@
 // 覆盖:合法回调 → ackOk 200 SUCCESS + 订单转 paid + 写权益
 //       伪造签名 → 400 FAIL
 //       重复回调(订单已 paid)→ 幂等 ackOk 200
-//       订单不存在 → ackFail
+//       订单不存在 / out_trade_no 非法 → ackFail
 //       无 apiKey 配置 → 503
+//
+// 注:out_trade_no 在生产中就是 order._id,即 24 位 hex 的 ObjectId,
+// 故夹具一律用合法 ObjectId 字符串。路由会先校验格式再查库
+// （非法值直接判「订单不存在」,避免 CastError 冒成 500 让微信反复重推）。
 
 jest.mock('../../models/Order')
 jest.mock('../../models/User')
@@ -23,7 +27,7 @@ function signedParams(overrides = {}) {
   const params = {
     return_code: 'SUCCESS',
     result_code: 'SUCCESS',
-    out_trade_no: 'order-1',
+    out_trade_no: '000000000000000000000001',
     transaction_id: 'wx-tx-123',
     total_fee: '9900', // 99 元 = 9900 分
     ...overrides
@@ -65,7 +69,7 @@ beforeEach(() => {
 describe('POST /api/v1/order/callback', () => {
   test('合法回调 → 200 SUCCESS,订单转 paid,VIP 订单写用户权益', async () => {
     const orderDoc = {
-      _id: 'order-vip-1',
+      _id: '000000000000000000000002',
       userId: 'u-vip',
       productType: 'vip_month',
       amount: 99,
@@ -76,7 +80,7 @@ describe('POST /api/v1/order/callback', () => {
     const userDoc = { _id: 'u-vip', vipLevel: 0, vipExpireAt: null, save: jest.fn(async function () { return this }) }
     User.findById.mockResolvedValue(userDoc)
 
-    const ctx = await invokeCallback(signedParams({ out_trade_no: 'order-vip-1' }))
+    const ctx = await invokeCallback(signedParams({ out_trade_no: '000000000000000000000002' }))
     expect(ctx.status).toBe(200)
     expect(ctx.body).toContain('SUCCESS')
     expect(orderDoc.status).toBe('paid')
@@ -89,7 +93,7 @@ describe('POST /api/v1/order/callback', () => {
 
   test('deep_report 订单回调 → paid,但不写 VIP', async () => {
     const orderDoc = {
-      _id: 'order-deep-1',
+      _id: '000000000000000000000003',
       userId: 'u-1',
       productType: 'deep_report',
       amount: 29.9,
@@ -98,14 +102,14 @@ describe('POST /api/v1/order/callback', () => {
     }
     Order.findById.mockResolvedValue(orderDoc)
 
-    const ctx = await invokeCallback(signedParams({ out_trade_no: 'order-deep-1', total_fee: '2990' }))
+    const ctx = await invokeCallback(signedParams({ out_trade_no: '000000000000000000000003', total_fee: '2990' }))
     expect(ctx.status).toBe(200)
     expect(orderDoc.status).toBe('paid')
     expect(User.findById).not.toHaveBeenCalled() // vip_month 才写 user
   })
 
   test('伪造签名 → 400 FAIL', async () => {
-    const params = signedParams({ out_trade_no: 'order-1' })
+    const params = signedParams({ out_trade_no: '000000000000000000000001' })
     params.sign = 'DEADBEEF' // 覆盖伪造
     const ctx = await invokeCallback(params)
     expect(ctx.status).toBe(400)
@@ -116,7 +120,7 @@ describe('POST /api/v1/order/callback', () => {
 
   test('重复回调(订单已 paid)→ 幂等 ackOk 200,不重复 save', async () => {
     const orderDoc = {
-      _id: 'order-2',
+      _id: '000000000000000000000004',
       userId: 'u-2',
       productType: 'deep_report',
       amount: 29.9,
@@ -125,7 +129,7 @@ describe('POST /api/v1/order/callback', () => {
     }
     Order.findById.mockResolvedValue(orderDoc)
 
-    const ctx = await invokeCallback(signedParams({ out_trade_no: 'order-2', total_fee: '2990' }))
+    const ctx = await invokeCallback(signedParams({ out_trade_no: '000000000000000000000004', total_fee: '2990' }))
     expect(ctx.status).toBe(200)
     expect(ctx.body).toContain('SUCCESS')
     expect(orderDoc.save).not.toHaveBeenCalled()
@@ -133,14 +137,24 @@ describe('POST /api/v1/order/callback', () => {
 
   test('订单不存在 → 200 FAIL', async () => {
     Order.findById.mockResolvedValue(null)
-    const ctx = await invokeCallback(signedParams({ out_trade_no: 'no-such' }))
+    const ctx = await invokeCallback(signedParams({ out_trade_no: '0000000000000000000000ff' }))
     expect(ctx.body).toContain('FAIL')
     expect(ctx.body).toContain('订单不存在')
   })
 
+  // 回归：非法 out_trade_no 曾让 findById 抛 CastError 冒成 500，
+  // 而微信对 5xx 会持续重推同一条回调。必须判成「订单不存在」并且不查库。
+  test('out_trade_no 非 ObjectId → 200 FAIL 且不查库', async () => {
+    const ctx = await invokeCallback(signedParams({ out_trade_no: 'not-an-object-id' }))
+    expect(ctx.status).toBe(200)
+    expect(ctx.body).toContain('FAIL')
+    expect(ctx.body).toContain('订单不存在')
+    expect(Order.findById).not.toHaveBeenCalled()
+  })
+
   test('金额不匹配 → 200 FAIL', async () => {
     const orderDoc = {
-      _id: 'order-3',
+      _id: '000000000000000000000005',
       userId: 'u-3',
       productType: 'deep_report',
       amount: 29.9,
@@ -149,7 +163,7 @@ describe('POST /api/v1/order/callback', () => {
     }
     Order.findById.mockResolvedValue(orderDoc)
     // total_fee 写错 1000 分(应付 2990 分)
-    const ctx = await invokeCallback(signedParams({ out_trade_no: 'order-3', total_fee: '1000' }))
+    const ctx = await invokeCallback(signedParams({ out_trade_no: '000000000000000000000005', total_fee: '1000' }))
     expect(ctx.body).toContain('FAIL')
     expect(ctx.body).toContain('金额不匹配')
     expect(orderDoc.status).toBe('pending')
@@ -158,7 +172,7 @@ describe('POST /api/v1/order/callback', () => {
 
   test('支付未成功(result_code != SUCCESS)→ 200 FAIL 不写 paid', async () => {
     const orderDoc = {
-      _id: 'order-4',
+      _id: '000000000000000000000006',
       userId: 'u-4',
       productType: 'deep_report',
       amount: 29.9,
@@ -166,7 +180,7 @@ describe('POST /api/v1/order/callback', () => {
       save: jest.fn()
     }
     Order.findById.mockResolvedValue(orderDoc)
-    const params = signedParams({ out_trade_no: 'order-4', total_fee: '2990', result_code: 'FAIL' })
+    const params = signedParams({ out_trade_no: '000000000000000000000006', total_fee: '2990', result_code: 'FAIL' })
     params.sign = md5Sign(params, 'test-api-key-for-sign')
     const ctx = await invokeCallback(params)
     expect(ctx.body).toContain('FAIL')

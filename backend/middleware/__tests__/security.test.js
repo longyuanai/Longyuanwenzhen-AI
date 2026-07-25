@@ -41,6 +41,18 @@ describe('corsAllow', () => {
     expect(next).toHaveBeenCalled()
   })
 
+  // 回归：prod + ALLOWED_ORIGINS 未配（fail-closed 默认部署姿势）会走 logger.warn 分支。
+  // 曾因 `const { logger } = require('../utils/logger')` 解构出 undefined，
+  // 这条路径对任意跨域请求抛 TypeError → 500。此前用例都传了非空 origins，绕开了它。
+  test('prod + 白名单为空 + 跨域 → 不抛错，不写 ACAO 头，next 仍放行', async () => {
+    const mw = corsAllow({ origins: '', isProd: true })
+    const ctx = makeCtx({ origin: 'https://evil.com' })
+    const next = jest.fn(async () => {})
+    await expect(mw(ctx, next)).resolves.not.toThrow()
+    expect(ctx.headers['access-control-allow-origin']).toBeUndefined()
+    expect(next).toHaveBeenCalled()
+  })
+
   test('白名单未命中 + prod → 不写 ACAO 头（浏览器拦）但 next 仍放行', async () => {
     const mw = corsAllow({ origins: 'https://a.com', isProd: true })
     const ctx = makeCtx({ origin: 'https://evil.com' })

@@ -19,7 +19,7 @@
 
 - **小程序**:微信原生 JS,无第三方 UI
 - **后端**:Node + Koa + Mongoose + Redis + JWT + axios + `lunar-javascript` + log4js
-- **AI**:OpenAI(`OPENAI_API_KEY`),AI 网关挂了要走本地降级模板(目前未实现,见陷阱)
+- **AI**:OpenAI(`OPENAI_API_KEY`),端点/模型可用 `OPENAI_BASE_URL` / `OPENAI_MODEL` 覆盖;AI 网关挂了走本地降级模板(`utils/localFallback.js`,五条路径各自不同)
 - **RAG**:LightRAG,索引源是 `bazi-skill-dist/books/` `cases/` `core/`,端点 `LIGHTRAG_URL`
 
 ## 常用命令
@@ -40,7 +40,7 @@ docker run -d --name bazi-mongo -p 27017:27017 mongo:7
 cd backend && npm start
 # 开发模式:npm run dev
 
-# 跑测试(16 套件 / 130 用例 / 约 3.3s)
+# 跑测试(30 套件 / 265 用例 / 约 8s)
 cd backend && npm test
 
 # 联调:自签 JWT + 插 user + paid four_school 订单(幂等)
@@ -55,7 +55,7 @@ node backend/scripts/dev-seed-test-user.js
 | 用户 | `POST /api/v1/user/wx-login` | 微信登录,返回 JWT |
 | 用户 | `GET /api/v1/user/profile` | 鉴权 |
 | 排盘 | `POST /api/v1/bazi/paipan` | 免费,服务端权威排盘 |
-| 排盘 | `GET /api/v1/bazi/history` | 鉴权 |
+| 排盘 | `GET /api/v1/bazi/history` | 鉴权,**但排盘不落库,恒返空数组** |
 | 解读 | `POST /api/v1/analysis/basic` | 免费 |
 | 解读 | `POST /api/v1/analysis/deep` | 鉴权 + 付费(deep_report / VIP) |
 | 解读 | `POST /api/v1/analysis/four-school` | 鉴权 + 付费(four_school / VIP),四家投票法 |
@@ -84,10 +84,10 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 测试
 
-- jest,28 套件 / 249 用例 / ~5s 全绿(2026-07-25)
+- jest,30 套件 / 265 用例 / ~8s 全绿(2026-07-25)
 - 黄金基准:机主本人盘 2002-11-20 巳时男 + `bazi-skill-dist/cases/` 张学良 / 邵逸夫(均在 1900-2100 范围内)
 - 跑命令:`cd backend && npm test`
-- 测试目录:`backend/utils/__tests__/`(13 个) + `backend/routes/__tests__/`(2 个) + `backend/middleware/__tests__/`(1 个) + `backend/config/__tests__/`(1 个)
+- 测试目录:`utils/__tests__/`(18) + `routes/__tests__/`(6) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
 - 端到端 RAG 测试 mock HTTP,**不依赖 LightRAG 实际运行**
 
 ## 联调锚点(2026-07-24 实战)
@@ -106,9 +106,13 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 已知陷阱(踩过的坑)
 
-- **🔴 P0 #30 — AI fallback 21 秒假死**:`backend/routes/analysis.js` 的 `generateAnalysis()` 没 axios timeout,catch 返固定文案"命理解读生成中,请稍后再试。"。**演示前必修**。修法:axios 加 `timeout: 5000` + 在 catch 走本地降级模板(basic/deep/four-school/dayun-segment/dayun-full 五条路径都要,四家/段不能共用一段换 4 个名字)。
-- **🟡 P1 #31 — 无 Mongo 时权益检查永远 403**:`utils/entitlementRegistry.js` 已实现 in-memory 兜底(走 `mongoose.connection.readyState === 1` 判 Mongo 连接),Mongo 写失败不抛错。无 Mongo 演示不再永远 403。
-- **CORS `*` → 已修**:`middleware/security.js` 的 `corsAllow` 读 `ALLOWED_ORIGINS`,prod fail-closed;`analysisRateLimit` 60 req/min per IP(可 `RATE_LIMIT_DISABLED=1` 关)。
+- **✅ P0 #30 — AI fallback 21 秒假死 → 已修**:`generateAnalysis()` 已加 `timeout: 5000`,catch 走 `utils/localFallback.js` 的本地降级模板(basic/deep/four-school/dayun-segment/dayun-full 五条路径各自不同,不共用)。
+- **🟡 P1 #31 — 无 Mongo 时权益检查永远 403**:`utils/entitlementRegistry.js` 已实现 in-memory 兜底(走 `mongoose.connection.readyState === 1` 判 Mongo 连接),Mongo 写失败不抛错。无 Mongo 演示不再永远 403。Mongo 命中结果缓存 60s(`ENTITLEMENT_CACHE_TTL_MS` 可调),退款/撤销后自动回源。
+- **CORS `*` → 已修**:`middleware/security.js` 的 `corsAllow` 读 `ALLOWED_ORIGINS`,prod fail-closed;`analysisRateLimit` 60 req/min per IP(可 `RATE_LIMIT_DISABLED=1` 关)。**注意它挂在 `app.use` 全局,实际限所有接口,不止 `/analysis/*`。**
+- **✅ 小程序 API 双前缀 → 已修**:`request.js` 的 `BASE_URL` 已含 `/api/v1`,页面里 url 只写 `/analysis/basic`。曾有页面写全路径拼成 `/api/v1/api/v1/...` 全部 404,且被上层 catch 静默降级掩盖。`normalizePath()` 现会剥掉重复前缀并 warn。
+- **✅ 解读接口只收 birth → 已修**:`/analysis/*` 收 `birth:{year,month,day,hour,minute,gender}`,后端自行排盘。客户端算的四柱/五行不是入参(服务端权威)。小程序侧用 `utils/bazi.js` 的 `buildBirthPayload(result)` 统一构造。
+- **`.env` 变量名**:以 `.env.example` 为准(`WX_SECRET` / `WXPAY_API_KEY` / `WXPAY_MCHID`)。`config/index.js` 兼容旧名 `WX_APPSECRET` / `WX_PAY_KEY`,新代码别用。`config/__tests__/env-wiring.test.js` 锁死这层接线。
+- **微信 tabBar 图标只认 png/jpg**:`assets/images/*.svg` 是设计源,`*.png` 才是小程序实际引用的。改图标要同步产出 png。
 - **`tasks.md` 与代码栈脱节**:`.codeartsdoer/specs/bazi_app/` 写 React Native + FastAPI + PostgreSQL,实际是原生小程序 + Koa + MongoDB。**以代码为准,不要被 spec 带偏**。
 - **AI 网关超时**:axios 没显式 timeout 默认 0,等 TCP/AI 网关返回 → 21 秒假死。
 - **RAG refs 全相同**:四家投票时 `retrieve(mingju)` 用同一 query,会导致徐乐吾/梁湘润/袁树珊/韦千里引用完全一样的 refs,差异化卖点消失。要 `retrieve(mingju, { query: queries.xu })` 给各家分别传 query。

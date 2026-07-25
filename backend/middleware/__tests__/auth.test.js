@@ -33,7 +33,17 @@ describe('authRequired', () => {
     const next = jest.fn(async () => {})
     await authRequired(ctx, next)
     expect(next).toHaveBeenCalled()
-    expect(ctx.state.user).toEqual({ userId: 'u123', openid: 'o1' })
+    // role 未签进 token 时降级为最低权限 'user'（不是省略字段：
+    // access.js 的 roleRequired 依赖它，缺字段会让角色分支静默失效）
+    expect(ctx.state.user).toEqual({ userId: 'u123', openid: 'o1', role: 'user' })
+  })
+
+  test('token 里的 role 被透传给下游中间件', async () => {
+    const ctx = makeCtx(`Bearer ${tokenFor({ userId: 'u9', openid: 'o9', role: 'admin' })}`)
+    const next = jest.fn(async () => {})
+    await authRequired(ctx, next)
+    expect(next).toHaveBeenCalled()
+    expect(ctx.state.user.role).toBe('admin')
   })
 
   test('缺 token → 401 且不放行', async () => {

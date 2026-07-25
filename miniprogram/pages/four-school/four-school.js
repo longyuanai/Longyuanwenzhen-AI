@@ -8,6 +8,7 @@
 // 设计动机:四家解读是产品差异化护城河(徐乐吾/梁湘润/袁树珊/韦千里
 // 四派并列),先把内容做出来,付费闭环后续等日均单量再优化。
 const { request } = require('../../utils/request')
+const { buildBirthPayload } = require('../../utils/bazi')
 
 // 客服微信号(占位,正式上线前替换)
 const CONTACT_WECHAT = 'bazi-help-2026'
@@ -32,16 +33,11 @@ Page({
       return
     }
 
-    // 小程序 bazi.js 的 result 结构：{ yearPillar, ..., input: { year, month, day, hour, gender } }
-    // 后端 /api/v1/analysis/four-school 收 birth: { year, month, day, hour, minute?, gender }
-    const input = result.input || {}
-    const birth = {
-      year: input.year,
-      month: input.month,
-      day: input.day,
-      hour: input.hour,
-      minute: 0,
-      gender: input.gender || 'male'
+    // 后端 /analysis/four-school 收 birth: { year, month, day, hour, minute?, gender }
+    const birth = buildBirthPayload(result)
+    if (!birth) {
+      this.setData({ isLoading: false, errorMsg: '出生信息不完整,请重新排盘' })
+      return
     }
 
     const baziInfo = [
@@ -61,7 +57,8 @@ Page({
   async loadFourSchool(birth) {
     try {
       const res = await request({
-        url: '/api/v1/analysis/four-school',
+        // BASE_URL 已含 /api/v1，此处不要重复带前缀
+        url: '/analysis/four-school',
         method: 'POST',
         data: { baziId: `local_${Date.now()}`, birth }
       })
@@ -111,8 +108,10 @@ Page({
     const info = this.data.baziInfo || ''
     return {
       title: `四家命理大师并列解读我的盘${info ? ' · ' + info : ''}`,
-      path: '/pages/index/index',
-      imageUrl: '/assets/images/share.png'
+      path: '/pages/index/index'
+      // imageUrl 暂不指定：assets/images/share.svg 是设计稿，微信分享图只认
+      // png/jpg。补出 1200x630 的 share.png 后在此填 '/assets/images/share.png'，
+      // 未指定时微信自动截取页面上部，不会出现加载不到的空白图。
     }
   },
 
