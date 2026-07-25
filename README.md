@@ -2,6 +2,13 @@
 
 一个基于传统命理学的八字排盘微信小程序，提供专业的八字排盘和AI命理解读服务。
 
+> **代码仓库**:
+> - GitHub: [longyuanai/Longyuanwenzhen-AI](https://github.com/longyuanai/Longyuanwenzhen-AI) (主仓)
+> - Gitee: [huang-jianzhe/bazi-app](https://gitee.com/huang-jianzhe/bazi-app) (镜像)
+>
+> **AI 开发**:本项目由 [Claude Code](https://claude.com/product/claude-code) 协助开发。
+> 桌面/移动端 Claude App 用户可直接打开本仓库会话,延续上下文继续开发。
+
 ## 项目结构
 
 ```
