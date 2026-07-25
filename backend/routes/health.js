@@ -5,11 +5,15 @@
 // 即使 LightRAG down 也返回 200 —— 这是产品健康 ≠ 全部组件健康 的语义。
 const Router = require('koa-router')
 const { healthCheck } = require('../utils/knowledgeRetriever')
+const sentry = require('../utils/sentry')
 
 const router = new Router()
 
 router.get('/health', async (ctx) => {
   const lightragUp = await healthCheck()
+  if (!lightragUp) {
+    sentry.captureMessage('lightrag health check down', 'warning')
+  }
   ctx.body = {
     code: 200,
     message: 'success',

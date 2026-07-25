@@ -7,7 +7,10 @@
     "start": "node app.js",
     "dev": "nodemon app.js",
     "test": "jest",
-    "seed:test": "node scripts/dev-seed-test-user.js"
+    "seed:test": "node scripts/dev-seed-test-user.js",
+    "seed:friends": "node scripts/seed-friends.js",
+    "seed:friends:10": "node scripts/seed-friends.js --count=10 --prefix=f",
+    "seed:reset": "node scripts/seed-friends.js --reset --prefix=f"
   },
   "keywords": [
     "bazi",

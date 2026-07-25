@@ -222,8 +222,84 @@ function buildFourSchoolFallback({ baziStr, dayunStr, mingju }) {
   return sections.join('\n')
 }
 
+function dayunSegmentSection(seg) {
+  return [
+    `一、整体基调`,
+    `第 ${seg.segmentIndex + 1} 段大运:${seg.ganZhi},年龄${seg.ageRange},年份${seg.startYear}-${seg.endYear}。`,
+    `${seg.leanText}。`,
+    `该段天干为${seg.tianGanShen},地支为${seg.diZhiShen};帮扶 ${seg.support} / 克伐 ${seg.drain}。`,
+    '',
+    `二、事业财运`,
+    seg.lean === 'xi'
+      ? `该段运势有利于事业拓展与财运积累,适合在喜用神方向加大投入。`
+      : seg.lean === 'ji'
+        ? `该段事业阻力可能增多,避免盲目扩张,稳健为先。`
+        : `该段事业财运起伏较多,喜忧参半,需灵活调整策略。`,
+    '',
+    `三、感情婚姻`,
+    seg.lean === 'xi'
+      ? `感情方面较顺,有利于关系推进或新缘分出现。`
+      : seg.lean === 'ji'
+        ? `感情可能遭遇磨合或变动,多沟通少决策。`
+        : `感情平稳为主,小幅波动属正常。`,
+    '',
+    `四、健康注意`,
+    seg.lean === 'ji'
+      ? `留意喜用神对应的五行脏腑/部位,作息与饮食避免过度透支。`
+      : `健康整体平稳,保持规律作息即可。`,
+    '',
+    `五、应对建议`,
+    `- 顺势:该段喜用神方向为${seg.lean === 'xi' ? '加大投入' : '稳定为主'},颜色/方位/行业可参考五行喜忌`,
+    `- 避坑:忌神方向(${seg.tianGanShen} / ${seg.diZhiShen} 阵营)的过度消耗`,
+    '',
+    DISCLAIMER
+  ].join('\n')
+}
+
+function dayunFullSection(fullList, mingju) {
+  const lines = [
+    `一、人生 8 段大运总览`,
+    `日主${mingju.dayMaster.gan}${mingju.dayMaster.element}(${mingju.strength.label}),8 段大运起伏如下:`
+  ]
+  fullList.forEach((s) => {
+    const flag = s.lean === 'xi' ? '★喜' : s.lean === 'ji' ? '⚠忌' : '·平'
+    lines.push(`  ${flag} ${s.ganZhi}(${s.ageRange})  天干${s.tianGanShen}/地支${s.diZhiShen}`)
+  })
+  const xiList = fullList.filter((s) => s.lean === 'xi').map((s) => s.ganZhi)
+  const jiList = fullList.filter((s) => s.lean === 'ji').map((s) => s.ganZhi)
+  lines.push('', '二、关键转折点')
+  lines.push(`喜神段:${xiList.join('、') || '无'}`)
+  lines.push(`忌神段:${jiList.join('、') || '无'}`)
+  lines.push('', '三、终身建议')
+  lines.push(`事业方向以喜用神五行(${fmtXi(mingju)})为主`)
+  lines.push(`规避过度投入忌神方向(${fmtJi(mingju)})`)
+  lines.push('', DISCLAIMER)
+  return lines.join('\n')
+}
+
+function buildDayunSegmentFallback({ baziStr, mingju, seg }) {
+  return [
+    LOCAL_TAG,
+    `八字:${baziStr}`,
+    `当前段:${seg.ganZhi}(${seg.ageRange})`,
+    '',
+    dayunSegmentSection(seg)
+  ].join('\n')
+}
+
+function buildDayunFullFallback({ baziStr, mingju, fullList }) {
+  return [
+    LOCAL_TAG,
+    `八字:${baziStr}`,
+    '',
+    dayunFullSection(fullList, mingju)
+  ].join('\n')
+}
+
 module.exports = {
   buildBasicFallback,
   buildDeepFallback,
-  buildFourSchoolFallback
+  buildFourSchoolFallback,
+  buildDayunSegmentFallback,
+  buildDayunFullFallback
 }

@@ -8,19 +8,27 @@ const config = require('../config')
 const logger = require('../utils/logger')
 const { authRequired } = require('../middleware/auth')
 const { antiBrush, quotaGuard } = require('../middleware/access')
+const sentry = require('../utils/sentry')
 const { paipan } = require('../utils/bazi')
 const { analyzeMingju } = require('../utils/mingju')
-const { buildBasicPrompt, buildDeepPrompt, validateAiOutput } = require('../utils/promptBuilder')
+const { buildBasicPrompt, buildDeepPrompt, validateAiOutput, formatKnowledgeContext } = require('../utils/promptBuilder')
 const { retrieve } = require('../utils/knowledgeRetriever')
 const {
   buildFourSchoolPrompt,
   buildFourSchoolQueries
 } = require('../utils/fourSchoolPrompt')
 const { buildOneLiner } = require('../utils/checkupSummary')
+const { analyzeDayunSegment, analyzeDayunFull, currentDayun } = require('../utils/dayun')
+const {
+  buildDayunSegmentPrompt,
+  buildDayunFullPrompt
+} = require('../utils/dayunPrompt')
 const {
   buildBasicFallback,
   buildDeepFallback,
-  buildFourSchoolFallback
+  buildFourSchoolFallback,
+  buildDayunSegmentFallback,
+  buildDayunFullFallback
 } = require('../utils/localFallback')
 const reg = require('../utils/entitlementRegistry')
 const { Lunar } = require('lunar-javascript')
@@ -69,6 +77,20 @@ async function hasFourSchoolEntitlement(userId) {
   return false
 }
 
+// 大运单段深度解读权益校验
+async function hasDayunSegmentEntitlement(userId) {
+  if (await reg.hasOrderPaid(userId, 'dayun_segment')) return true
+  if (await reg.hasValidVip(userId)) return true
+  return false
+}
+
+// 大运全卷权益校验
+async function hasDayunFullEntitlement(userId) {
+  if (await reg.hasOrderPaid(userId, 'dayun_full')) return true
+  if (await reg.hasValidVip(userId)) return true
+  return false
+}
+
 // 从请求体的 birth 重新排盘并算论断（服务端权威，杜绝客户端篡改结论）。
 // 返回 { paipanResult, mingju, baziStr, dayunStr } 或抛 INVALID_INPUT。
 function computeFromBirth(birth) {
@@ -95,9 +117,9 @@ function computeFromBirth(birth) {
  *   2. catch 走本地降级模板(基本/深度/四家并列各自不同)
  *   3. 降级内容开头显式标注「本地解读模板」,让用户知情
  *
- * @param {string} type     'basic' | 'deep' | 'four-school'
+ * @param {string} type     'basic' | 'deep' | 'four-school' | 'dayun-segment' | 'dayun-full'
  * @param {string} prompt   提示词
- * @param {object} computed { baziStr, dayunStr, mingju } 供降级模板使用
+ * @param {object} computed { baziStr, dayunStr, mingju, [seg|fullList] } 供降级模板使用
  */
 async function generateAnalysis(type, prompt, computed) {
   try {
@@ -128,6 +150,8 @@ async function generateAnalysis(type, prompt, computed) {
     if (type === 'basic') return buildBasicFallback(computed)
     if (type === 'deep') return buildDeepFallback(computed)
     if (type === 'four-school') return buildFourSchoolFallback(computed)
+    if (type === 'dayun-segment') return buildDayunSegmentFallback(computed)
+    if (type === 'dayun-full') return buildDayunFullFallback(computed)
     return '命理解读生成中，请稍后再试。'
   }
 }
@@ -165,6 +189,7 @@ router.post('/basic', antiBrush({ dim: 'analysis.basic', max: 60 }), async (ctx)
     }
   } catch (err) {
     logger.error('基础解读错误:', err)
+    sentry.captureException(err, { method: ctx.method, url: ctx.url, status: 500, ip: ctx.ip })
     ctx.status = 500
     ctx.body = { code: 500, message: '解读生成失败', data: null, timestamp: Date.now() }
   }
@@ -213,6 +238,7 @@ router.post('/deep', authRequired, quotaGuard({ dim: 'analysis.deep', max: 5 }),
     }
   } catch (err) {
     logger.error('深度报告错误:', err)
+    sentry.captureException(err, { method: ctx.method, url: ctx.url, status: 500, ip: ctx.ip })
     ctx.status = 500
     ctx.body = { code: 500, message: '报告生成失败', data: null, timestamp: Date.now() }
   }
@@ -296,6 +322,7 @@ router.post('/four-school', authRequired, quotaGuard({ dim: 'analysis.four_schoo
     }
   } catch (err) {
     logger.error('四家解读错误:', err)
+    sentry.captureException(err, { method: ctx.method, url: ctx.url, status: 500, ip: ctx.ip })
     ctx.status = 500
     ctx.body = { code: 500, message: '四家解读生成失败', data: null, timestamp: Date.now() }
   }
@@ -325,6 +352,10 @@ router.post('/checkup', antiBrush({ dim: 'analysis.checkup', max: 120 }), async 
 
     const pp = computed.paipanResult
     const m = computed.mingju
+    const cur = currentDayun(pp, m)
+    const currentDaYun = cur
+      ? { segmentIndex: cur.segmentIndex, ganZhi: cur.ganZhi, ageRange: cur.ageRange, lean: cur.lean, oneLiner: `当前在${cur.ganZhi}大运(${cur.ageRange}),${cur.leanText}` }
+      : null
     ctx.body = {
       code: 200,
       message: 'success',
@@ -342,14 +373,160 @@ router.post('/checkup', antiBrush({ dim: 'analysis.checkup', max: 120 }), async 
         yongShen: m.yongShen,
         geju: m.geju,
         oneLiner: buildOneLiner(pp, m),
+        currentDaYun,
         disclaimer: m.disclaimer
       },
       timestamp: Date.now()
     }
   } catch (err) {
     logger.error('体检接口错误:', err)
+    sentry.captureException(err, { method: ctx.method, url: ctx.url, status: 500, ip: ctx.ip })
     ctx.status = 500
     ctx.body = { code: 500, message: '体检生成失败', data: null, timestamp: Date.now() }
+  }
+})
+
+/**
+ * 大运单段深度解读（付费 dayun_segment 19.9 / VIP）
+ * POST /api/v1/analysis/dayun-segment
+ * body: { baziId, birth, segmentIndex }
+ */
+router.post('/dayun-segment', authRequired, quotaGuard({ dim: 'analysis.dayun_segment', max: 5 }), async (ctx) => {
+  try {
+    const { baziId, birth, segmentIndex } = ctx.request.body
+    const userId = ctx.state.user.userId
+
+    if (!Number.isInteger(segmentIndex) || segmentIndex < 0 || segmentIndex > 7) {
+      return badRequest(ctx, 'segmentIndex 须为 0-7 的整数')
+    }
+
+    const entitled = await hasDayunSegmentEntitlement(userId)
+    if (!entitled) {
+      ctx.status = 403
+      ctx.body = {
+        code: 403,
+        message: '大运单段解读需付费解锁，请先完成支付',
+        data: { baziId, type: 'dayun_segment', paid: false },
+        timestamp: Date.now()
+      }
+      return
+    }
+
+    let computed
+    try {
+      computed = computeFromBirth(birth)
+    } catch (e) {
+      if (e.code === 'INVALID_INPUT') return badRequest(ctx, e.message)
+      throw e
+    }
+
+    const seg = analyzeDayunSegment(computed.paipanResult, computed.mingju, { segmentIndex })
+    if (!seg) return badRequest(ctx, 'segmentIndex 超出大运段范围')
+
+    const refs = await retrieve(computed.mingju, { query: `大运 ${seg.ganZhi} ${seg.leanText}` })
+    const knowledgeContext = formatKnowledgeContext(refs)
+
+    const prompt = buildDayunSegmentPrompt(
+      computed.baziStr,
+      computed.mingju,
+      seg,
+      knowledgeContext
+    )
+    const content = await generateAnalysis('dayun-segment', prompt, {
+      ...computed,
+      seg
+    })
+
+    logger.info(`生成大运单段解读: ${baziId}, 段 ${segmentIndex}, 用户: ${userId}, refs ${refs.length}`)
+
+    ctx.body = {
+      code: 200,
+      message: 'success',
+      data: {
+        baziId,
+        content,
+        type: 'dayun_segment',
+        segmentIndex,
+        seg,
+        mingju: computed.mingju,
+        sources: { total: refs.length }
+      },
+      timestamp: Date.now()
+    }
+  } catch (err) {
+    logger.error('大运单段解读错误:', err)
+    sentry.captureException(err, { method: ctx.method, url: ctx.url, status: 500, ip: ctx.ip })
+    ctx.status = 500
+    ctx.body = { code: 500, message: '大运单段解读生成失败', data: null, timestamp: Date.now() }
+  }
+})
+
+/**
+ * 大运全卷（8 段）付费解读（dayun_full 49.9 / VIP）
+ * POST /api/v1/analysis/dayun-full
+ * body: { baziId, birth }
+ */
+router.post('/dayun-full', authRequired, quotaGuard({ dim: 'analysis.dayun_full', max: 3 }), async (ctx) => {
+  try {
+    const { baziId, birth } = ctx.request.body
+    const userId = ctx.state.user.userId
+
+    const entitled = await hasDayunFullEntitlement(userId)
+    if (!entitled) {
+      ctx.status = 403
+      ctx.body = {
+        code: 403,
+        message: '大运全卷需付费解锁，请先完成支付',
+        data: { baziId, type: 'dayun_full', paid: false },
+        timestamp: Date.now()
+      }
+      return
+    }
+
+    let computed
+    try {
+      computed = computeFromBirth(birth)
+    } catch (e) {
+      if (e.code === 'INVALID_INPUT') return badRequest(ctx, e.message)
+      throw e
+    }
+
+    const fullList = analyzeDayunFull(computed.paipanResult, computed.mingju)
+
+    const refs = await retrieve(computed.mingju, { query: '大运十年阶段 吉凶转折' })
+    const knowledgeContext = formatKnowledgeContext(refs)
+
+    const prompt = buildDayunFullPrompt(
+      computed.baziStr,
+      computed.mingju,
+      fullList,
+      knowledgeContext
+    )
+    const content = await generateAnalysis('dayun-full', prompt, {
+      ...computed,
+      fullList
+    })
+
+    logger.info(`生成大运全卷解读: ${baziId}, 用户: ${userId}, refs ${refs.length}`)
+
+    ctx.body = {
+      code: 200,
+      message: 'success',
+      data: {
+        baziId,
+        content,
+        type: 'dayun_full',
+        segments: fullList,
+        mingju: computed.mingju,
+        sources: { total: refs.length }
+      },
+      timestamp: Date.now()
+    }
+  } catch (err) {
+    logger.error('大运全卷解读错误:', err)
+    sentry.captureException(err, { method: ctx.method, url: ctx.url, status: 500, ip: ctx.ip })
+    ctx.status = 500
+    ctx.body = { code: 500, message: '大运全卷解读生成失败', data: null, timestamp: Date.now() }
   }
 })
 

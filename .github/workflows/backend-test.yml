@@ -1,0 +1,47 @@
+# GitHub Actions / Gitee Go — 后端测试 CI
+# 触发:push 到 master、PR 目标 master、手动触发
+# 镜像兼容:Gitee Go Actions 用同一份 yml
+name: backend-test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci || npm install
+
+      - name: Run tests
+        working-directory: backend
+        env:
+          # CI 环境无 MongoDB / Redis / LightRAG / OpenAI,所有依赖走 mock + in-memory 兜底
+          NODE_ENV: test
+          JWT_SECRET: ci-test-secret
+          REDIS_URL: ''
+          LIGHTRAG_URL: ''
+          OPENAI_API_KEY: ''
+          SENTRY_DSN: ''
+          RATE_LIMIT_DISABLED: '1'
+        run: npm test
+
+      # 覆盖率可选,跑通再加 codecov
+      # - name: Coverage
+      #   working-directory: backend
+      #   run: npm test -- --coverage

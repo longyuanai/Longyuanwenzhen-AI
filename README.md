@@ -47,6 +47,8 @@
 │
 ├── docs/                # 集成文档 + 命理知识素材
 │
+├── .github/workflows/    # CI: backend-test.yml 跑后端测试(push/PR 触发)
+│
 └── .codeartsdoer/       # SDD规格文档
     └── specs/
         └── bazi_miniprogram/
@@ -84,6 +86,62 @@
 - 深度报告付费解锁
 - 四家并列解读付费档
 - 订单管理
+
+## 数据流架构图
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 小程序 / H5 客户端                                               │
+│  miniprogram/pages/{index,paipan,result,analysis,profile}       │
+│  frontend/checkup.html   (时辰未知→微信联系收口)               │
+└────────────────┬────────────────────────────────────────────────┘
+                 │ wx.login / POST /api/v1/{bazi,analysis,order}
+                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Koa 后端 (backend/app.js)                                       │
+│ ┌────────────┐ ┌────────────┐ ┌──────────────┐ ┌─────────────┐  │
+│ │ middleware │→│  routes/   │→│ algorithm   │→│ AI / RAG    │  │
+│ │ CORS白名单 │ │  user/bazi │ │ utils/bazi  │ │ OpenAI GPT-4 │  │
+│ │ 60/min限流 │ │ analysis/  │ │ mingju/wang │ │ 本地降级模板 │  │
+│ │ JWT 鉴权   │ │ order/health│ │ Shuai/yong  │ │ LightRAG→    │  │
+│ │ 配额/防刷  │ │            │ │ Shen/geju  │ │ bazi-skill  │  │
+│ └────────────┘ └────────────┘ └──────────────┘ │ -dist/books │  │
+│                          │                    └─────────────┘  │
+│                          ▼                                       │
+│                ┌────────────────────┐                            │
+│                │ MongoDB (Mongoose) │  User / Order / Bazi       │
+│                │ Redis (缓存+配额)   │  RAG cache 5min / q:u:b:ip│
+│                └────────────────────┘                            │
+└─────────────────────────────────────────────────────────────────┘
+                 ▲
+                 │ 微信支付回调 (唯一 paid 入口,验签+幂等)
+                 │
+            ┌────┴─────┐
+            │  微信支付  │ → grantEntitlement() 写 VIP / paid 订单
+            └──────────┘
+```
+
+**算法层核心链路**(详见 `docs/algorithm-pipeline.md`):
+
+```
+出生信息 (year/month/day/hour/gender)
+  └→ utils/bazi.js (paipan)        → 四柱 + 十神 + 大运 [确定性]
+      └→ utils/mingju.js            → 身强弱 / 喜忌 / 格局 [确定性]
+          └→ utils/wangShuai.js     → 旺衰细化
+          └→ utils/yongShen.js      → 喜忌推导
+              └→ utils/{promptBuilder,fourSchoolPrompt}.js  → 注入提示词
+                  └→ AI 仅翻译,绝不信任客户端传入的论断
+```
+
+**降级路径**:
+- AI 超时 (5s) → `utils/localFallback.js` 本地模板(标注「本地解读模板」)
+- LightRAG down → `utils/knowledgeRetriever.js` graceful degradation,refs 空数组
+- 无 MongoDB → `utils/entitlementRegistry.js` in-memory Map 兜底
+
+**关键不变量**:
+- 排盘权威在后端(`MIN_YEAR=1900` `MAX_YEAR=2100`,超界 400)
+- 订单金额服务端定价,忽略客户端传入(`config/products.js`)
+- 付费唯一合法入口 = 微信回调(`/api/v1/order/callback` 验签 + 金额匹配 + 幂等)
 
 ## 技术栈
 
@@ -178,6 +236,31 @@ SENTRY_TRACES_SAMPLE_RATE=0
 SENTRY_RELEASE=
 ```
 
+## 熟人测试(灰度内测)
+
+跳过微信支付,走真实沙箱 appid wx-login + 真实 LightRAG,让 50 个熟人扫码即用全档付费内容。
+
+```bash
+# 0. 拿微信测试号(https://mp.weixin.qq.com/debug/cgi-bin/sandboxinfo)
+#    把 WX_APPID / WX_SECRET 填进 backend/.env
+
+# 1. 起 Mongo + 后端 + LightRAG(三件事并行)
+docker run -d --name bazi-mongo -p 27017:27017 mongo:7
+cd bazi-skill-dist && OPENAI_API_KEY=sk-xxx bash scripts/serve-lightrag.sh
+cd backend && npm install && npm run dev
+
+# 2. 一次性造 10 个熟人测试账号(每人全 SKU + VIP 30 天)
+cd backend && npm run seed:friends:10
+# 输出 10 段文本,每段含 token/userId/orderId,直接复制发微信
+
+# 3. 微信开发者工具导入 miniprogram → 预览 → 真机扫码
+#    每人首次扫码触发真实 wx-login,然后所有付费档全开
+```
+
+**扩容**:`npm run seed:friends -- --count=20 --prefix=wave2 --days=30`(新一轮 20 人)
+**回收**:`npm run seed:reset`(清空所有 f-* 前缀用户 + 订单)
+**全程不走微信支付**:`scripts/seed-friends.js` 直接 `Order.create({status:'paid'})` + `grantVip()`,所有 SKU 一次开通,过期前不需任何付费动作。
+
 ## API接口
 
 ### 健康检查
@@ -195,7 +278,9 @@ SENTRY_RELEASE=
 - `POST /api/v1/analysis/basic` - 基础解读(免费)
 - `POST /api/v1/analysis/deep` - 深度报告(鉴权 + 付费:deep_report / VIP)
 - `POST /api/v1/analysis/four-school` - 四家并列解读(鉴权 + 付费:four_school / VIP)
-- `POST /api/v1/analysis/checkup` - 免费五行体检(确定性算法,不调 AI,7ms)
+- `POST /api/v1/analysis/dayun-segment` - 大运单段深度解读(鉴权 + 付费:dayun_segment 19.9 / VIP)
+- `POST /api/v1/analysis/dayun-full` - 大运全卷 8 段(鉴权 + 付费:dayun_full 49.9 / VIP)
+- `POST /api/v1/analysis/checkup` - 免费五行体检(确定性算法,不调 AI,7ms,响应含 currentDaYun 钩子)
 
 ### 订单接口
 - `POST /api/v1/order/create` - 创建订单(鉴权,服务端定价)
@@ -222,12 +307,14 @@ SENTRY_RELEASE=
 - [x] H5 体检页 CSS/JS 拆分 + render() XSS 硬化(createElement + textContent)
 - [x] CORS 白名单(prod fail-closed)+ AI 类接口 IP 限流(60 req/min)
 - [x] Sentry 监控骨架(`utils/sentry.js`,DSN 为空降级 console,未捕获 promise/exception 兜底)
-- [x] 后端测试套件(jest,22 套件 / 183 用例 / ~4.5s 全绿)
-- [x] AI 网关超时/失败降级本地模板(P0 #30,axios timeout: 5000,basic/deep/four-school 三路径各不同模板)
+- [x] 后端测试套件(jest,28 套件 / 249 用例 / ~5s 全绿)
+- [x] AI 网关超时/失败降级本地模板(P0 #30,axios timeout: 5000,basic/deep/four-school/dayun-segment/dayun-full 五路径各不同模板)
 - [x] 权益检查 in-memory 兜底(P1 #31,utils/entitlementRegistry,无 Mongo 演示不再永远 403)
 - [x] 联调脚本(`scripts/dev-seed-test-user.js`,`npm run seed:test` 一键跑)
-- [x] 中间件分层(`middleware/envelope.js` + `extractToken.js` + `auth.js`)
+- [x] 中间件分层(`middleware/envelope.js` + `extractToken.js` + `auth.js` + `access.js`)
 - [x] 数据库连接配置层(`config/db.js`,从 app.js 抽出)
+- [x] GitHub Actions CI(`.github/workflows/backend-test.yml`,push/PR 自动跑 npm test)
+- [x] 大运阶段报告(`/dayun-segment` 19.9 + `/dayun-full` 49.9,`/checkup` 免费钩子 currentDaYun)
 
 ### 🚧 进行中
 - [ ] 微信支付完整集成

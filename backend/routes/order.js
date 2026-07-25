@@ -13,6 +13,7 @@ const User = require('../models/User')
 const { getProduct } = require('../config/products')
 const { verifySign } = require('../utils/wxpay')
 const { authRequired } = require('../middleware/auth')
+const sentry = require('../utils/sentry')
 
 const router = new Router()
 
@@ -108,6 +109,7 @@ router.post('/callback', async (ctx) => {
   try {
     if (!verifySign(params, apiKey)) {
       logger.warn('支付回调验签失败')
+      sentry.captureMessage('wxpay callback signature invalid', 'warning')
       ctx.status = 400
       ctx.body = ackFail('验签失败')
       return
@@ -134,6 +136,7 @@ router.post('/callback', async (ctx) => {
     const expectedFen = Math.round(order.amount * 100)
     if (Number(params.total_fee) !== expectedFen) {
       logger.error(`支付金额不匹配: 订单应付 ${expectedFen} 分, 回调 ${params.total_fee} 分`)
+      sentry.captureMessage(`wxpay amount mismatch: expected ${expectedFen}, got ${params.total_fee}`, 'error')
       ctx.body = ackFail('金额不匹配')
       return
     }
@@ -149,6 +152,7 @@ router.post('/callback', async (ctx) => {
     ctx.body = ackOk()
   } catch (err) {
     logger.error('支付回调处理错误:', err)
+    sentry.captureException(err, { method: ctx.method, url: ctx.url, status: 500, ip: ctx.ip })
     ctx.status = 500
     ctx.body = ackFail('服务器错误')
   }

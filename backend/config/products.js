@@ -27,6 +27,19 @@ const PRODUCTS = Object.freeze({
     productType: 'four_school',
     name: '四家并列解读',
     amount: positiveNumber(process.env.PRICE_FOUR_SCHOOL, 19.9)
+  }),
+  // 单段大运深度：指定 10 年运势的深度解读(事业/财运/感情/健康)
+  // 定价与 four_school 持平,体现「时间维度」+「确定性论断」价值
+  dayun_segment: Object.freeze({
+    productType: 'dayun_segment',
+    name: '大运单段深度解读',
+    amount: positiveNumber(process.env.PRICE_DAYUN_SEGMENT, 19.9)
+  }),
+  // 全卷大运(8 段):完整 80 年人生剧本概览,定位高端
+  dayun_full: Object.freeze({
+    productType: 'dayun_full',
+    name: '大运全卷(8段)',
+    amount: positiveNumber(process.env.PRICE_DAYUN_FULL, 49.9)
   })
 })
 

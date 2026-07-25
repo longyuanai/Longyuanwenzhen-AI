@@ -59,7 +59,9 @@ node backend/scripts/dev-seed-test-user.js
 | 解读 | `POST /api/v1/analysis/basic` | 免费 |
 | 解读 | `POST /api/v1/analysis/deep` | 鉴权 + 付费(deep_report / VIP) |
 | 解读 | `POST /api/v1/analysis/four-school` | 鉴权 + 付费(four_school / VIP),四家投票法 |
-| 解读 | `POST /api/v1/analysis/checkup` | 免费五行体检,7ms |
+| 解读 | `POST /api/v1/analysis/dayun-segment` | 鉴权 + 付费(dayun_segment 19.9 / VIP),单段深度 |
+| 解读 | `POST /api/v1/analysis/dayun-full` | 鉴权 + 付费(dayun_full 49.9 / VIP),8 段全卷 |
+| 解读 | `POST /api/v1/analysis/checkup` | 免费五行体检,7ms,响应含 currentDaYun |
 | 订单 | `POST /api/v1/order/create` | 鉴权,服务端定价 |
 | 订单 | `POST /api/v1/order/callback` | **微信回调,公开**,唯一合法 paid 入口 |
 | 订单 | `GET /api/v1/order/list` | 鉴权 |
@@ -78,11 +80,11 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 付费档
 
-`deep_report` `four_school` 两种付费产品 + `vip_month` 月卡通行证。服务端定价在 `backend/config/products.js`,**忽略客户端传入的 amount**。`vip_month` 在微信回调 `grantEntitlement()` 里写用户 VIP 等级 + 到期时间;`deep_report` `four_school` 的权益判定走 `utils/entitlementRegistry.js`(有 Mongo 查 Mongo,无 Mongo 走 in-memory 兜底 → 演示永远 200/403,**不会 21 秒假死**);持有有效 VIP 也算已付费。
+`deep_report` `four_school` `dayun_segment` `dayun_full` 四种付费产品 + `vip_month` 月卡通行证。服务端定价在 `backend/config/products.js`,**忽略客户端传入的 amount**。`vip_month` 在微信回调 `grantEntitlement()` 里写用户 VIP 等级 + 到期时间;`deep_report` `four_school` `dayun_segment` `dayun_full` 的权益判定走 `utils/entitlementRegistry.js`(有 Mongo 查 Mongo,无 Mongo 走 in-memory 兜底 → 演示永远 200/403,**不会 21 秒假死**);持有有效 VIP 也算已付费。
 
 ## 测试
 
-- jest,22 套件 / 183 用例 / ~4.5s 全绿(2026-07-25)
+- jest,28 套件 / 249 用例 / ~5s 全绿(2026-07-25)
 - 黄金基准:机主本人盘 2002-11-20 巳时男 + `bazi-skill-dist/cases/` 张学良 / 邵逸夫(均在 1900-2100 范围内)
 - 跑命令:`cd backend && npm test`
 - 测试目录:`backend/utils/__tests__/`(13 个) + `backend/routes/__tests__/`(2 个) + `backend/middleware/__tests__/`(1 个) + `backend/config/__tests__/`(1 个)
@@ -104,7 +106,7 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 已知陷阱(踩过的坑)
 
-- **🔴 P0 #30 — AI fallback 21 秒假死**:`backend/routes/analysis.js` 的 `generateAnalysis()` 没 axios timeout,catch 返固定文案"命理解读生成中,请稍后再试。"。**演示前必修**。修法:axios 加 `timeout: 5000` + 在 catch 走本地降级模板(basic/deep/four-school 三条路径都要,四家不能共用一段换 4 个名字)。
+- **🔴 P0 #30 — AI fallback 21 秒假死**:`backend/routes/analysis.js` 的 `generateAnalysis()` 没 axios timeout,catch 返固定文案"命理解读生成中,请稍后再试。"。**演示前必修**。修法:axios 加 `timeout: 5000` + 在 catch 走本地降级模板(basic/deep/four-school/dayun-segment/dayun-full 五条路径都要,四家/段不能共用一段换 4 个名字)。
 - **🟡 P1 #31 — 无 Mongo 时权益检查永远 403**:`utils/entitlementRegistry.js` 已实现 in-memory 兜底(走 `mongoose.connection.readyState === 1` 判 Mongo 连接),Mongo 写失败不抛错。无 Mongo 演示不再永远 403。
 - **CORS `*` → 已修**:`middleware/security.js` 的 `corsAllow` 读 `ALLOWED_ORIGINS`,prod fail-closed;`analysisRateLimit` 60 req/min per IP(可 `RATE_LIMIT_DISABLED=1` 关)。
 - **`tasks.md` 与代码栈脱节**:`.codeartsdoer/specs/bazi_app/` 写 React Native + FastAPI + PostgreSQL,实际是原生小程序 + Koa + MongoDB。**以代码为准,不要被 spec 带偏**。
