@@ -54,8 +54,8 @@ node backend/scripts/dev-seed-test-user.js
 |---|---|---|
 | 用户 | `POST /api/v1/user/wx-login` | 微信登录,返回 JWT |
 | 用户 | `GET /api/v1/user/profile` | 鉴权 |
-| 排盘 | `POST /api/v1/bazi/paipan` | 免费,服务端权威排盘 |
-| 排盘 | `GET /api/v1/bazi/history` | 鉴权,**但排盘不落库,恒返空数组** |
+| 排盘 | `POST /api/v1/bazi/paipan` | 免费(`authOptional`),服务端权威排盘;登录则落库 |
+| 排盘 | `GET /api/v1/bazi/history` | 鉴权,返回本人排盘记录(`?limit=` 1-100,默认 20) |
 | 解读 | `POST /api/v1/analysis/basic` | 免费 |
 | 解读 | `POST /api/v1/analysis/deep` | 鉴权 + 付费(deep_report / VIP) |
 | 解读 | `POST /api/v1/analysis/four-school` | 鉴权 + 付费(four_school / VIP),四家投票法 |
@@ -87,10 +87,10 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 测试
 
-- jest,31 套件 / 281 用例 / ~8s 全绿(2026-07-25)
+- jest,34 套件 / 303 用例 / ~9s 全绿(2026-07-25)
 - 黄金基准:机主本人盘 2002-11-20 巳时男 + `bazi-skill-dist/cases/` 张学良 / 邵逸夫(均在 1900-2100 范围内)
 - 跑命令:`cd backend && npm test`
-- 测试目录:`utils/__tests__/`(19) + `routes/__tests__/`(6) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
+- 测试目录:`utils/__tests__/`(20) + `routes/__tests__/`(8) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
 - 端到端 RAG 测试 mock HTTP,**不依赖 LightRAG 实际运行**
 
 ## 联调锚点(2026-07-24 实战)
@@ -111,7 +111,8 @@ node backend/scripts/dev-seed-test-user.js
 
 - **✅ P0 #30 — AI fallback 21 秒假死 → 已修**:`generateAnalysis()` 已加 `timeout: 5000`,catch 走 `utils/localFallback.js` 的本地降级模板(basic/deep/four-school/dayun-segment/dayun-full 五条路径各自不同,不共用)。
 - **🟡 P1 #31 — 无 Mongo 时权益检查永远 403**:`utils/entitlementRegistry.js` 已实现 in-memory 兜底(走 `mongoose.connection.readyState === 1` 判 Mongo 连接),Mongo 写失败不抛错。无 Mongo 演示不再永远 403。Mongo 命中结果缓存 60s(`ENTITLEMENT_CACHE_TTL_MS` 可调),退款/撤销后自动回源。
-- **CORS `*` → 已修**:`middleware/security.js` 的 `corsAllow` 读 `ALLOWED_ORIGINS`,prod fail-closed;`analysisRateLimit` 60 req/min per IP(可 `RATE_LIMIT_DISABLED=1` 关)。**注意它挂在 `app.use` 全局,实际限所有接口,不止 `/analysis/*`。**
+- **CORS `*` → 已修**:`middleware/security.js` 的 `corsAllow` 读 `ALLOWED_ORIGINS`,prod fail-closed;`analysisRateLimit` 60 req/min per IP(可 `RATE_LIMIT_DISABLED=1` 关)。**✅ 已从 `app.use` 全局改为只挂 `/api/v1/analysis` 路由段**——此前把 `/health`、`/bazi/paipan` 一起限了,健康检查会被自己的限流打成 429。范围由 `routes/__tests__/ratelimit-scope.test.js` 锁死。
+- **限流计数优先走 Redis**:配了 `REDIS_URL` 则多实例共享计数,否则回落进程内 Map(单实例等价,多实例不精确)。Redis 客户端统一在 `utils/redisClient.js`,别再各处复制 `getRedis()`。
 - **✅ 小程序 API 双前缀 → 已修**:`request.js` 的 `BASE_URL` 已含 `/api/v1`,页面里 url 只写 `/analysis/basic`。曾有页面写全路径拼成 `/api/v1/api/v1/...` 全部 404,且被上层 catch 静默降级掩盖。`normalizePath()` 现会剥掉重复前缀并 warn。
 - **✅ 解读接口只收 birth → 已修**:`/analysis/*` 收 `birth:{year,month,day,hour,minute,gender}`,后端自行排盘。客户端算的四柱/五行不是入参(服务端权威)。小程序侧用 `utils/bazi.js` 的 `buildBirthPayload(result)` 统一构造。
 - **`.env` 变量名**:以 `.env.example` 为准(`WX_SECRET` / `WXPAY_API_KEY` / `WXPAY_MCHID`)。`config/index.js` 兼容旧名 `WX_APPSECRET` / `WX_PAY_KEY`,新代码别用。`config/__tests__/env-wiring.test.js` 锁死这层接线。

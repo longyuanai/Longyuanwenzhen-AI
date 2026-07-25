@@ -285,8 +285,8 @@ cd backend && npm run seed:friends:10
 - `GET /api/v1/user/profile` - 获取用户信息(鉴权)
 
 ### 排盘接口
-- `POST /api/v1/bazi/paipan` - 生成八字排盘(免费)
-- `GET /api/v1/bazi/history` - 查询排盘历史(鉴权;**排盘结果尚未落库,当前恒返空数组**)
+- `POST /api/v1/bazi/paipan` - 生成八字排盘(免费,免登录可用;带 token 则同时存入历史)
+- `GET /api/v1/bazi/history` - 查询排盘历史(鉴权;`?limit=` 1-100,默认 20)
 
 ### 解读接口
 - `POST /api/v1/analysis/basic` - 基础解读(免费)

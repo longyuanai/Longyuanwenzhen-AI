@@ -28,11 +28,6 @@ app.use(bodyParser({
   formLimit: '10mb'
 }))
 
-// AI 类接口限流：60 req/min per IP（可被 RATE_LIMIT_DISABLED=1 关掉做压测）
-if (process.env.RATE_LIMIT_DISABLED !== '1') {
-  app.use(analysisRateLimit())
-}
-
 // 错误处理中间件
 app.use(async (ctx, next) => {
   try {
@@ -66,9 +61,16 @@ const analysisRoutes = require('./routes/analysis')
 const orderRoutes = require('./routes/order')
 const healthRoutes = require('./routes/health')
 
+// AI 类接口限流：60 req/min per IP（可被 RATE_LIMIT_DISABLED=1 关掉做压测）。
+// 只挂 /analysis 路由段 —— 此前是 app.use 全局，把 /health、/bazi/paipan
+// 也一起限了，既与名字不符，也会让健康检查在高峰期被自己的限流打成 429。
+const analysisMiddleware = process.env.RATE_LIMIT_DISABLED === '1'
+  ? []
+  : [analysisRateLimit()]
+
 router.use('/api/v1/user', userRoutes.routes(), userRoutes.allowedMethods())
 router.use('/api/v1/bazi', baziRoutes.routes(), baziRoutes.allowedMethods())
-router.use('/api/v1/analysis', analysisRoutes.routes(), analysisRoutes.allowedMethods())
+router.use('/api/v1/analysis', ...analysisMiddleware, analysisRoutes.routes(), analysisRoutes.allowedMethods())
 router.use('/api/v1/order', orderRoutes.routes(), orderRoutes.allowedMethods())
 
 // /health（顶级,不挂 /api/v1 前缀；保持向后兼容）

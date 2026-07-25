@@ -2,7 +2,8 @@
 const Router = require('koa-router')
 const logger = require('../utils/logger')
 const { paipan } = require('../utils/bazi')
-const { authRequired } = require('../middleware/auth')
+const { authRequired, authOptional } = require('../middleware/auth')
+const recordStore = require('../utils/baziRecordStore')
 
 const router = new Router()
 
@@ -30,8 +31,11 @@ function parseBirth(birthDate, birthTime) {
 /**
  * 八字排盘
  * POST /api/v1/bazi/paipan
+ *
+ * 免登录可用（排盘是免费主功能）。带了合法 token 则额外把这一盘写进历史记录，
+ * 供 GET /history 回看 —— 故用 authOptional 而非 authRequired。
  */
-router.post('/paipan', async (ctx) => {
+router.post('/paipan', authOptional, async (ctx) => {
   try {
     const { birthDate, birthTime, gender } = ctx.request.body
 
@@ -64,13 +68,34 @@ router.post('/paipan', async (ctx) => {
     // 后端权威排盘（对齐 spec 5.2.2：排盘以后端计算为准）
     const result = paipan({ ...birth, gender: normGender })
 
-    logger.info(`排盘成功: ${birthDate} ${birthTime} ${normGender} -> ${result.dayPillar.gan}${result.dayPillar.zhi}日`)
+    const baziStr = ['year', 'month', 'day', 'hour']
+      .map((k) => result[k + 'Pillar'].gan + result[k + 'Pillar'].zhi)
+      .join(' ')
+
+    // 登录用户才落库。存储失败只告警不抛：排盘是免费主功能，
+    // 不能因为写历史失败就把整个请求打成 500。
+    let baziId = null
+    const userId = ctx.state.user && ctx.state.user.userId
+    if (userId) {
+      const record = await recordStore.save(
+        userId,
+        { ...birth, gender: normGender },
+        baziStr,
+        ctx.request.body.label
+      )
+      if (record) baziId = record.id
+    }
+
+    logger.info(`排盘成功: ${birthDate} ${birthTime} ${normGender} -> ${result.dayPillar.gan}${result.dayPillar.zhi}日${baziId ? `, 已存记录 ${baziId}` : ''}`)
 
     ctx.body = {
       code: 200,
       message: 'success',
       data: {
-        baziId: `bazi_${Date.now()}`,
+        // 登录且落库成功时是真实记录 id（可用于回看）；
+        // 匿名或存储不可用时退回临时 id，仅作本次请求的关联标识。
+        baziId: baziId || `bazi_${Date.now()}`,
+        persisted: !!baziId,
         ...result
       },
       timestamp: Date.now()
@@ -95,21 +120,21 @@ router.post('/paipan', async (ctx) => {
 
 /**
  * 获取排盘历史
- * GET /api/v1/bazi/history
+ * GET /api/v1/bazi/history?limit=20
  *
- * 此前没挂 authRequired，却读 ctx.state.user?.userId —— 应用里没有全局 JWT
- * 中间件，这个字段永远是 undefined，接口恒返 401。现在按文档挂上鉴权。
- *
- * ⚠️ 未实现持久化：排盘结果目前不落库（没有 Bazi 模型，baziId 是
- * `bazi_${Date.now()}` 用完即弃），所以这里只能返回空数组。要真正支持历史，
- * 需要先加排盘记录模型并在 /paipan 里写库。
+ * 返回该用户存过的排盘记录（出生信息 + 四柱快照），按时间倒序。
+ * 只返回排盘输入，不返回四柱以外的派生结果 —— 要完整命盘，
+ * 拿 birth 重新调 /paipan 即可（排盘是纯函数，重算成本可忽略）。
  */
 router.get('/history', authRequired, async (ctx) => {
   try {
+    const limit = Math.min(Math.max(parseInt(ctx.query.limit, 10) || 20, 1), 100)
+    const records = await recordStore.list(ctx.state.user.userId, limit)
+
     ctx.body = {
       code: 200,
       message: 'success',
-      data: [],
+      data: records,
       timestamp: Date.now()
     }
   } catch (err) {

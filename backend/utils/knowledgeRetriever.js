@@ -26,25 +26,9 @@ const DEFAULTS = {
   cacheTtlSec: Number(process.env.LIGHTRAG_CACHE_TTL) || 300
 }
 
-// Redis 客户端懒加载:redis 包未安装或 REDIS_URL 未配置时,缓存层跳过,
-// 原 HTTP 逻辑不受影响。命中失败也不抛错(继续走 HTTP)。
-let _redis = null
-let _redisTried = false
-function getRedis() {
-  if (_redisTried) return _redis
-  _redisTried = true
-  if (!process.env.REDIS_URL) return null
-  try {
-    const { createClient } = require('redis')
-    const client = createClient({ url: process.env.REDIS_URL })
-    client.on('error', () => {}) // 吞错,不污染业务日志
-    client.connect().catch(() => {})
-    _redis = client
-    return client
-  } catch {
-    return null
-  }
-}
+// Redis 缓存层：REDIS_URL 未配置 / redis 包不可用时 getRedis() 返 null，
+// 缓存整体跳过，原 HTTP 逻辑不受影响；读写失败也不抛错（继续走 HTTP）。
+const { getRedis } = require('./redisClient')
 
 function cacheKey(query, topK) {
   const h = crypto.createHash('sha1').update(`${query}|${topK}`).digest('hex')

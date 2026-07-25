@@ -12,6 +12,7 @@
 // utils/logger 直接导出 { info, debug, warn, error, trace }，不要解构出 logger 键
 // （曾误写成 const { logger } = ...，prod 白名单为空时 logger.warn 抛 TypeError → 500）
 const logger = require('../utils/logger')
+const { incrInWindow } = require('../utils/redisClient')
 
 function parseList(raw) {
   if (!raw) return []
@@ -61,6 +62,10 @@ function corsAllow(options = {}) {
 //   - windowMs: 窗口毫秒
 //   - max: 窗口内最大请求数
 //   - keyFn(ctx): 自定义计数 key（默认 IP）
+//
+// 计数优先走 Redis（配了 REDIS_URL 时），多实例部署共享同一份计数；
+// Redis 不可用则回落到进程内 Map —— 单实例下等价于原行为，多实例下
+// 每个实例各算各的（不精确，但比完全不限强）。
 function rateLimit({ windowMs = 60_000, max = 60, keyFn } = {}) {
   const buckets = new Map() // key -> { count, resetAt }
   const getKey = keyFn || ((ctx) => ctx.ip || ctx.request.ip || 'unknown')
@@ -75,9 +80,29 @@ function rateLimit({ windowMs = 60_000, max = 60, keyFn } = {}) {
   // 不阻止进程退出
   if (sweep.unref) sweep.unref()
 
+  function reject(ctx, retry) {
+    ctx.status = 429
+    ctx.set('Retry-After', String(retry))
+    ctx.body = {
+      code: 429,
+      message: `请求过于频繁，请 ${retry} 秒后再试`,
+      data: null,
+      timestamp: Date.now()
+    }
+  }
+
   return async function limiter(ctx, next) {
     const key = getKey(ctx)
     const now = Date.now()
+
+    // 优先 Redis 共享计数
+    const shared = await incrInWindow(`rl:${key}`, windowMs)
+    if (shared !== null) {
+      if (shared > max) return reject(ctx, Math.ceil(windowMs / 1000))
+      return next()
+    }
+
+    // 回落进程内计数
     let b = buckets.get(key)
     if (!b || b.resetAt <= now) {
       b = { count: 0, resetAt: now + windowMs }
@@ -85,22 +110,15 @@ function rateLimit({ windowMs = 60_000, max = 60, keyFn } = {}) {
     }
     b.count += 1
     if (b.count > max) {
-      const retry = Math.max(1, Math.ceil((b.resetAt - now) / 1000))
-      ctx.status = 429
-      ctx.set('Retry-After', String(retry))
-      ctx.body = {
-        code: 429,
-        message: `请求过于频繁，请 ${retry} 秒后再试`,
-        data: null,
-        timestamp: now
-      }
-      return
+      return reject(ctx, Math.max(1, Math.ceil((b.resetAt - now) / 1000)))
     }
     await next()
   }
 }
 
-// 预制：AI 类接口限流 60 req/min per IP
+// 预制：AI 类接口限流 60 req/min per IP。
+// ⚠️ 只应挂在 /api/v1/analysis 路由段上 —— 曾经挂 app.use 全局，
+// 把 /health、/bazi/paipan 一起限了，与名字和意图都不符。
 const analysisRateLimit = () => rateLimit({ windowMs: 60_000, max: 60 })
 
 module.exports = { corsAllow, rateLimit, analysisRateLimit }

@@ -14,26 +14,9 @@
 //   - admin 角色绕过 quota / antiBrush
 
 const { envelope } = require('./envelope')
+const { incrInWindow } = require('../utils/redisClient')
 
 const ROLE_RANK = { user: 0, vip: 1, admin: 2 }
-
-let _redis = null
-let _redisTried = false
-function getRedis() {
-  if (_redisTried) return _redis
-  _redisTried = true
-  if (!process.env.REDIS_URL) return null
-  try {
-    const { createClient } = require('redis')
-    const client = createClient({ url: process.env.REDIS_URL })
-    client.on('error', () => {})
-    client.connect().catch(() => {})
-    _redis = client
-    return client
-  } catch {
-    return null
-  }
-}
 
 function actor(ctx) {
   const u = ctx.state.user || {}
@@ -84,19 +67,12 @@ function quotaGuard(opts) {
     }
     const { isAdmin } = actor(ctx)
     if (isAdmin) return next()
-    const redis = getRedis()
-    if (!redis) return next() // 降级放行
-    const key = `q:u:${ctx.state.user.userId}:${dim}`
-    try {
-      const n = await redis.incr(key)
-      if (n === 1) await redis.expire(key, Math.ceil(windowMs / 1000))
-      if (n > max) {
-        ctx.status = 429
-        ctx.body = envelope(429, `今日 ${dim} 配额已用完(${max}/天)`)
-        return
-      }
-    } catch {
-      // Redis 读失败,放行
+    // Redis 不可用 / 读失败 → incrInWindow 返 null → 降级放行，不阻断业务
+    const n = await incrInWindow(`q:u:${ctx.state.user.userId}:${dim}`, windowMs)
+    if (n !== null && n > max) {
+      ctx.status = 429
+      ctx.body = envelope(429, `今日 ${dim} 配额已用完(${max}/天)`)
+      return
     }
     await next()
   }
@@ -116,19 +92,12 @@ function antiBrush(opts) {
   }
   return async function (ctx, next) {
     const ip = ctx.request.ip || ctx.ip || 'unknown'
-    const redis = getRedis()
-    if (!redis) return next()
-    const key = `b:ip:${ip}:${dim}`
-    try {
-      const n = await redis.incr(key)
-      if (n === 1) await redis.expire(key, Math.ceil(windowMs / 1000))
-      if (n > max) {
-        ctx.status = 429
-        ctx.body = envelope(429, `操作过于频繁,请 ${Math.ceil(windowMs / 1000)}s 后再试`)
-        return
-      }
-    } catch {
-      // Redis 读失败,放行
+    // Redis 不可用 / 读失败 → 降级放行
+    const n = await incrInWindow(`b:ip:${ip}:${dim}`, windowMs)
+    if (n !== null && n > max) {
+      ctx.status = 429
+      ctx.body = envelope(429, `操作过于频繁,请 ${Math.ceil(windowMs / 1000)}s 后再试`)
+      return
     }
     await next()
   }
