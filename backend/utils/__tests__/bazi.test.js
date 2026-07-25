@@ -52,6 +52,15 @@ describe('paipan - 大运（节气精算）', () => {
     expect(jiaYin.ageEnd).toBe(36)
   })
 
+  // startAge 是小程序结果页直接绑定的字段。本地简化算法把它写死成 1 岁，
+  // 导致 8 步大运的年龄区间整体偏移；服务端必须给出按节气精算的真实值。
+  test('startAge 为节气精算的起运年龄，且等于第一步大运起始年龄', () => {
+    const r = paipan({ year: 2002, month: 11, day: 20, hour: 10, minute: 0, gender: 'male' })
+    expect(r.daYun.startAge).toBe(7)
+    expect(r.daYun.startAge).toBe(r.daYun.daYunList[0].ageStart)
+    expect(r.daYun.startAge).not.toBe(1) // 不能是本地兜底那个写死值
+  })
+
   test('大运列表已过滤起运前占位段（无空干支）', () => {
     const r = paipan({ year: 2002, month: 11, day: 20, hour: 10, minute: 0, gender: 'male' })
     r.daYun.daYunList.forEach(d => {

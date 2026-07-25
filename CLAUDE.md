@@ -73,6 +73,9 @@ node backend/scripts/dev-seed-test-user.js
 ## 算法层约定
 
 - **排盘权威在后端**:`backend/utils/bazi.js`,基于 `lunar-javascript`,边界 `MIN_YEAR=1900` `MAX_YEAR=2100`,超界抛 `INVALID_INPUT` 返 400
+- **小程序排盘走服务端**:`pages/paipan/paipan.js` 调 `/bazi/paipan`,网络不可达才降级本地 `utils/bazi.js`(结果打 `isLocalFallback`,结果页出提示条)。后端明确返 400(如超界)时**不兜底**,直接报错——本地算法只会算出一个同样无效的盘。
+- **两端排盘一致性由节气表保证**:`miniprogram/utils/solarTerms.js`(1899-2101,22KB)由 `backend/scripts/gen-solar-terms.js` 从 lunar-javascript 预生成,本地的立春分年/节气分月/起运年龄都基于它,与后端**按构造对齐**。表范围比支持范围两端各多一年(年初年末算起运要查相邻年的节)。
+  改任一侧排盘逻辑或重新生成表后,必须跑 `utils/__tests__/paipan-parity.test.js`(含 6 个年份逐日扫描)。重新生成:`npm run gen:solar-terms`。
 - **身强弱 / 喜忌 / 格局由 `mingju.js` 确定性算**,作为"已知结论"注入 prompt;**绝不信任客户端**传入的论断
 - **AI 只翻译**:`utils/promptBuilder.js` 给基础/深度,`utils/fourSchoolPrompt.js` 给四家并列
 - **农历输入**:`birth.calendar === 'lunar'` 走 `normalizeBirthToSolar`,闰月传负月份
@@ -84,10 +87,10 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 测试
 
-- jest,30 套件 / 265 用例 / ~8s 全绿(2026-07-25)
+- jest,31 套件 / 281 用例 / ~8s 全绿(2026-07-25)
 - 黄金基准:机主本人盘 2002-11-20 巳时男 + `bazi-skill-dist/cases/` 张学良 / 邵逸夫(均在 1900-2100 范围内)
 - 跑命令:`cd backend && npm test`
-- 测试目录:`utils/__tests__/`(18) + `routes/__tests__/`(6) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
+- 测试目录:`utils/__tests__/`(19) + `routes/__tests__/`(6) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
 - 端到端 RAG 测试 mock HTTP,**不依赖 LightRAG 实际运行**
 
 ## 联调锚点(2026-07-24 实战)

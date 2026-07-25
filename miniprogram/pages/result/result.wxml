@@ -1,5 +1,10 @@
 <!--pages/result/result.wxml-->
 <view class="container" wx:if="{{result}}">
+  <!-- 降级提示：服务端排盘不可达时用了本地简化算法，起运年龄与大运区间会有偏差 -->
+  <view class="fallback-tip" wx:if="{{isLocalFallback}}">
+    当前为离线排盘结果，起运年龄与大运区间可能有偏差，联网后重新排盘可获得精确结果。
+  </view>
+
   <!-- 基本信息 -->
   <view class="info-section card">
     <view class="info-row">

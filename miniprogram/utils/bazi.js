@@ -1,4 +1,18 @@
-// utils/bazi.js - 八字排盘核心算法
+// utils/bazi.js - 八字排盘算法（离线兜底用）
+//
+// ⚠️ 定位：排盘权威在后端 /api/v1/bazi/paipan（基于 lunar-javascript）。
+//    本模块只在网络不可达时兜底，结果会打 isLocalFallback 标记。
+//
+// 与后端的一致性由 utils/solarTerms.js 保证：那张节气表是用后端同一个引擎
+// 预生成的，本模块的立春分年、节气分月、起运年龄都基于它推算，因此两端
+// **按构造对齐**，而不是两套算法各自逼近同一个答案。
+//
+// 历史坑（2026-07-25 修）：此前年柱按日历年、月柱按日历月切分，且起运年龄
+// 写死 1 岁。实测四柱与后端 4/4 不一致（月柱全错、晚子时错），等于给用户看
+// 了另一个八字。改动本模块或重新生成节气表后，务必跑
+// backend/utils/__tests__/paipan-parity.test.js 校验两端逐日一致。
+
+const solarTerms = require('./solarTerms')
 
 // 天干
 const TIANGAN = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']
@@ -34,36 +48,66 @@ const CANG_GAN = {
 const SHISHEN_NAMES = ['比肩', '劫财', '食神', '伤官', '偏财', '正财', '七杀', '正官', '偏印', '正印']
 
 /**
- * 计算年柱
- * @param {number} year - 公历年份
- * @returns {object} 年柱 {gan, zhi}
+ * 求某时刻所属的「命理月序」。
+ *
+ * 命理以节（非中气、非日历月）分月：小寒起丑月、立春起寅月……大雪起子月。
+ * solarTerms 的 12 个节按公历月序排列，索引 0=小寒(丑) 1=立春(寅) … 11=大雪(子)。
+ *
+ * @returns {{jieIndex:number, jieYear:number}}
+ *   jieIndex 为该时刻已进入的节的索引；jieYear 为该节所属公历年
+ *   （1 月立春前出生者属上一年的大雪/子月，故 jieYear 可能是 year-1）
  */
-function getYearPillar(year) {
-  // 以立春为界，这里简化处理，使用年份计算
-  // 实际应用中需要根据节气判断
-  const ganIndex = (year - 4) % 10
-  const zhiIndex = (year - 4) % 12
+function locateJie(year, month, day, hour, minute) {
+  // 从当年最后一个节往前找第一个「已到达」的节
+  for (let i = 11; i >= 0; i--) {
+    if (solarTerms.reachedJie(year, i, month, day, hour, minute)) {
+      return { jieIndex: i, jieYear: year }
+    }
+  }
+  // 当年小寒都还没到（1 月 1-5 日左右出生）→ 归入上一年的大雪(子月)
+  return { jieIndex: 11, jieYear: year - 1 }
+}
+
+/**
+ * 计算年柱（以立春为界，不是公历元旦）
+ *
+ * 立春前出生者仍属上一年干支。例：2002-01-15 生人年柱是辛巳而非壬午。
+ *
+ * @param {number} year 公历年份
+ * @param {number} [month] 公历月；省略时按公历年计算（兼容旧调用）
+ * @returns {object} 年柱 {gan, zhi, ganIndex, zhiIndex}
+ */
+function getYearPillar(year, month, day, hour, minute) {
+  let y = year
+  if (month != null) {
+    // 立春（索引 1）之前出生 → 归上一年
+    const beforeLiChun = !solarTerms.reachedJie(year, 1, month, day, hour || 0, minute || 0)
+    // 只有 1、2 月才可能在立春之前，避免年末误判
+    if (beforeLiChun && month <= 2) y = year - 1
+  }
+
+  const ganIndex = ((y - 4) % 10 + 10) % 10
+  const zhiIndex = ((y - 4) % 12 + 12) % 12
 
   return {
-    gan: TIANGAN[ganIndex >= 0 ? ganIndex : ganIndex + 10],
-    zhi: DIZHI[zhiIndex >= 0 ? zhiIndex : zhiIndex + 12],
-    ganIndex: ganIndex >= 0 ? ganIndex : ganIndex + 10,
-    zhiIndex: zhiIndex >= 0 ? zhiIndex : zhiIndex + 12
+    gan: TIANGAN[ganIndex],
+    zhi: DIZHI[zhiIndex],
+    ganIndex: ganIndex,
+    zhiIndex: zhiIndex
   }
 }
 
 /**
- * 计算月柱
- * @param {number} year - 公历年份
- * @param {number} month - 公历月份 (1-12)
- * @param {string} yearGan - 年干
- * @returns {object} 月柱 {gan, zhi}
+ * 计算月柱（以节分月，不是公历月）
+ *
+ * 五虎遁月口诀：甲己之年丙作首，乙庚之岁戊为头，
+ *               丙辛之岁寻庚上，丁壬壬寅顺行流，
+ *               戊癸之年甲寅首
+ *
+ * @param {number} jieIndex 0=小寒(丑) 1=立春(寅) … 11=大雪(子)
+ * @param {string} yearGan  年干（须是立春分界后的年干）
  */
-function getMonthPillar(year, month, yearGan) {
-  // 五虎遁月口诀：甲己之年丙作首，乙庚之岁戊为头，
-  //               丙辛之岁寻庚上，丁壬壬寅顺行流，
-  //               戊癸之年甲寅首
-
+function getMonthPillar(jieIndex, yearGan) {
   const monthGanStart = {
     '甲': 2, '己': 2,  // 丙寅起
     '乙': 4, '庚': 4,  // 戊寅起
@@ -72,10 +116,11 @@ function getMonthPillar(year, month, yearGan) {
     '戊': 0, '癸': 0   // 甲寅起
   }
 
-  // 月支固定：寅(1月)、卯(2月)...丑(12月)
-  // 这里简化处理，实际需要根据节气判断
-  const zhiIndex = (month + 1) % 12
-  const ganIndex = (monthGanStart[yearGan] + month - 1) % 10
+  // 节索引 → 月支索引：小寒(0)→丑(1)，立春(1)→寅(2)，……大雪(11)→子(0)
+  const zhiIndex = (jieIndex + 1) % 12
+  // 寅月为该年第 1 个月（五虎遁的起点），小寒/丑月排在寅月之前算第 12 个
+  const monthOrder = jieIndex === 0 ? 11 : jieIndex - 1
+  const ganIndex = (monthGanStart[yearGan] + monthOrder) % 10
 
   return {
     gan: TIANGAN[ganIndex],
@@ -116,15 +161,21 @@ function getDayPillar(year, month, day) {
 
 /**
  * 计算时柱
- * @param {string} dayGan - 日干
- * @param {number} hour - 小时 (0-23)
- * @returns {object} 时柱 {gan, zhi}
+ *
+ * 晚子时（23:00-23:59）：日柱仍算当日，但时干按**次日**日干起遁
+ * （对齐后端 lunar-javascript 的处理）。此前统一用当日日干，
+ * 23 点出生的盘时柱必错。
+ *
+ * 五鼠遁时口诀：甲己还加甲，乙庚丙作初，
+ *               丙辛从戊起，丁壬庚子居，
+ *               戊癸何方发，壬子是真途
+ *
+ * @param {string} dayGan   日干（当日）
+ * @param {number} hour     小时 (0-23)
+ * @param {string} [nextDayGan] 次日日干，晚子时用；省略则退回 dayGan
+ * @returns {object} 时柱 {gan, zhi, ganIndex, zhiIndex}
  */
-function getHourPillar(dayGan, hour) {
-  // 五鼠遁时口诀：甲己还加甲，乙庚丙作初，
-  //               丙辛从戊起，丁壬庚子居，
-  //               戊癸何方发，壬子是真途
-
+function getHourPillar(dayGan, hour, nextDayGan) {
   const hourGanStart = {
     '甲': 0, '己': 0,  // 甲子起
     '乙': 2, '庚': 2,  // 丙子起
@@ -141,7 +192,9 @@ function getHourPillar(dayGan, hour) {
     zhiIndex = Math.floor((hour + 1) / 2)
   }
 
-  const ganIndex = (hourGanStart[dayGan] + zhiIndex) % 10
+  // 晚子时用次日日干起遁
+  const startGan = (hour === 23 && nextDayGan) ? nextDayGan : dayGan
+  const ganIndex = (hourGanStart[startGan] + zhiIndex) % 10
 
   return {
     gan: TIANGAN[ganIndex],
@@ -196,6 +249,88 @@ function getCangGan(zhi) {
   return CANG_GAN[zhi] || []
 }
 
+// 时辰序号：子=0(23:00-00:59) 丑=1(01:00-02:59) … 亥=11(21:00-22:59)
+// 与 lunar-javascript 的 LunarUtil.getTimeZhiIndex 同规则
+function timeZhiIndex(hour, minute) {
+  const hm = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+  let x = 1
+  for (let i = 1; i < 22; i += 2) {
+    const lo = `${String(i).padStart(2, '0')}:00`
+    const hi = `${String(i + 1).padStart(2, '0')}:59`
+    if (hm >= lo && hm <= hi) return x
+    x++
+  }
+  return 0
+}
+
+// 两个日期相差的整天数（忽略时分）
+function daysBetween(a, b) {
+  const ms = Date.UTC(b.year, b.month - 1, b.day) - Date.UTC(a.year, a.month - 1, a.day)
+  return Math.round(ms / 86400000)
+}
+
+/**
+ * 起运时刻距出生的「年/月/日」偏移。
+ *
+ * 严格照搬 lunar-javascript 的 Yun 起运算法（默认 sect=1）：
+ *   顺行数到下一个节、逆行数到上一个节；三天折一年、一天折四个月、
+ *   一个时辰折十天。这里必须与后端逐步一致，否则起运年龄会差一岁。
+ *
+ * @returns {{year:number, month:number, day:number}}
+ */
+function calcStartOffset(birth, jieLoc, isForward) {
+  let prev, next
+
+  if (isForward) {
+    // 下一个节：当前节索引 +1，跨年则进到下一年的小寒
+    const ni = jieLoc.jieIndex + 1
+    const ny = ni > 11 ? jieLoc.jieYear + 1 : jieLoc.jieYear
+    const j = solarTerms.getJie(ny, ni > 11 ? 0 : ni)
+    if (!j) return null
+    next = { year: ny, ...j }
+  } else {
+    // 上一个节就是当前所在的节
+    const j = solarTerms.getJie(jieLoc.jieYear, jieLoc.jieIndex)
+    if (!j) return null
+    prev = { year: jieLoc.jieYear, ...j }
+  }
+
+  const start = isForward ? birth : prev
+  const end = isForward ? next : birth
+
+  // 注意 23 点的特例：起运计算里按亥(11)处理，不按子(0)
+  const endTzi = end.hour === 23 ? 11 : timeZhiIndex(end.hour, end.minute || 0)
+  const startTzi = start.hour === 23 ? 11 : timeZhiIndex(start.hour, start.minute || 0)
+
+  let hourDiff = endTzi - startTzi
+  let dayDiff = daysBetween(start, end)
+  if (hourDiff < 0) {
+    hourDiff += 12
+    dayDiff--
+  }
+
+  const monthDiff = Math.floor((hourDiff * 10) / 30)
+  let month = dayDiff * 4 + monthDiff
+  const day = hourDiff * 10 - monthDiff * 30
+  const year = Math.floor(month / 12)
+  month = month - year * 12
+
+  return { year, month, day }
+}
+
+/**
+ * 起运虚岁 = 起运公历年 - 出生公历年 + 1
+ * （lunar-javascript 的 buildDaYun 就是这么定的，不是天数直接折算）
+ */
+function calcStartAge(birth, jieLoc, isForward) {
+  const off = calcStartOffset(birth, jieLoc, isForward)
+  if (!off) return 1 // 表外年份，退回保守值
+
+  // 起运公历日期 = 出生日期 + year 年 + month 月 + day 天
+  const d = new Date(birth.year + off.year, birth.month - 1 + off.month, birth.day + off.day)
+  return d.getFullYear() - birth.year + 1
+}
+
 /**
  * 计算大运
  * @param {string} gender - 性别 'male' 或 'female'
@@ -205,7 +340,7 @@ function getCangGan(zhi) {
  * @param {number} birthMonth - 出生月份
  * @returns {object} 大运信息
  */
-function getDaYun(gender, yearGan, monthPillar, birthYear, birthMonth) {
+function getDaYun(gender, yearGan, monthPillar, birth, jieLoc) {
   // 判断大运顺逆
   // 阳男阴女顺行，阴男阳女逆行
   const yearGanYinYang = TIANGAN.indexOf(yearGan) % 2  // 0为阳，1为阴
@@ -220,10 +355,9 @@ function getDaYun(gender, yearGan, monthPillar, birthYear, birthMonth) {
     isForward = yearGanYinYang === 1
   }
 
-  // 计算起运年龄（简化计算，实际需要根据节气）
-  // 这里使用简化公式：起运年龄 = (出生月到下一个节气的天数) / 3
-  // 简化处理：假设起运年龄为1岁
-  const startAge = 1
+  // 起运年龄：顺行数到下一个节、逆行数到上一个节，三天折一年（余数舍去）。
+  // 此前这里写死 1 岁，导致所有人的 8 步大运年龄区间整体偏移。
+  const startAge = calcStartAge(birth, jieLoc, isForward)
 
   // 排列大运（通常排8步）
   const daYunList = []
@@ -293,12 +427,19 @@ function buildBirthPayload(result) {
  */
 function paipan(params) {
   const { year, month, day, hour, gender } = params
+  const minute = params.minute || 0
+
+  // 定位所在的「节」——年柱、月柱、起运年龄都以它为准（不是日历年月）
+  const jieLoc = locateJie(year, month, day, hour, minute)
 
   // 计算四柱
-  const yearPillar = getYearPillar(year)
-  const monthPillar = getMonthPillar(year, month, yearPillar.gan)
+  const yearPillar = getYearPillar(year, month, day, hour, minute)
+  const monthPillar = getMonthPillar(jieLoc.jieIndex, yearPillar.gan)
   const dayPillar = getDayPillar(year, month, day)
-  const hourPillar = getHourPillar(dayPillar.gan, hour)
+  // 晚子时（23 点）时干按次日日干起遁，故需取次日日柱
+  const nextDay = new Date(year, month - 1, day + 1)
+  const nextDayPillar = getDayPillar(nextDay.getFullYear(), nextDay.getMonth() + 1, nextDay.getDate())
+  const hourPillar = getHourPillar(dayPillar.gan, hour, nextDayPillar.gan)
 
   // 计算十神
   const tenGods = {
@@ -321,7 +462,7 @@ function paipan(params) {
   }
 
   // 计算大运
-  const daYun = getDaYun(gender, yearPillar.gan, monthPillar, year, month)
+  const daYun = getDaYun(gender, yearPillar.gan, monthPillar, { year, month, day, hour, minute }, jieLoc)
 
   // 组装结果
   const result = {

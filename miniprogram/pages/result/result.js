@@ -4,7 +4,8 @@ const bazi = require('../../utils/bazi')
 Page({
   data: {
     result: null,
-    pillars: []
+    pillars: [],
+    isLocalFallback: false
   },
 
   onLoad() {
@@ -61,7 +62,10 @@ Page({
 
     this.setData({
       result: result,
-      pillars: pillars
+      pillars: pillars,
+      // 服务端排盘不可达时用了本地简化算法（起运年龄/大运区间会有偏差），
+      // 明确告知用户，避免把降级结果当成权威结论
+      isLocalFallback: !!result.isLocalFallback
     })
   },
 

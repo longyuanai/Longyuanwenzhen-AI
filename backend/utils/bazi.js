@@ -107,6 +107,9 @@ function paipan(params) {
     }))
   const daYun = {
     isForward: yun.isForward(),      // true=顺行
+    // 起运年龄（虚岁）。由库按节气精算，取第一步大运的起始年龄。
+    // 小程序结果页直接绑定该字段；其本地兜底算法里这个值是写死的 1 岁。
+    startAge: daYunList.length ? daYunList[0].ageStart : null,
     startYear: yun.getStartYear(),   // 起运需经过的年数
     startMonth: yun.getStartMonth(),
     startDay: yun.getStartDay(),

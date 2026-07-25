@@ -1,5 +1,6 @@
 // pages/paipan/paipan.js
 const bazi = require('../../utils/bazi')
+const { request } = require('../../utils/request')
 const { saveBaziRecord } = require('../../utils/util')
 
 Page({
@@ -96,7 +97,15 @@ Page({
   },
 
   // 开始排盘
-  startPaipan() {
+  //
+  // 排盘权威在后端：/bazi/paipan 基于 lunar-javascript，节气分月、立春分年、
+  // 晚子时、起运年龄与顺逆全部按真实节气推算。本地 utils/bazi.js 是简化实现
+  // （起运年龄写死 1 岁，大运年龄区间会整体偏移若干年），只在后端不可达时兜底，
+  // 并在结果里打 isLocalFallback 标记，让结果页能提示用户。
+  //
+  // 这一点很重要：解读接口同样由后端重新排盘，若展示用本地盘、解读用服务端盘，
+  // 用户会看到「盘是这个、解读讲的是另一个」。
+  async startPaipan() {
     if (!this.validateForm()) {
       return
     }
@@ -104,18 +113,7 @@ Page({
     this.setData({ isLoading: true })
 
     try {
-      // 解析日期
-      const [year, month, day] = this.data.birthDate.split('-').map(Number)
-      const hour = this.data.currentHour
-
-      // 执行排盘
-      const result = bazi.paipan({
-        year: year,
-        month: month,
-        day: day,
-        hour: hour,
-        gender: this.data.gender
-      })
+      const result = await this.requestPaipan()
 
       // 添加额外信息
       result.birthDate = this.data.birthDate
@@ -136,11 +134,46 @@ Page({
     } catch (err) {
       console.error('排盘失败:', err)
       wx.showToast({
-        title: '排盘失败，请重试',
+        title: (err && err.message) || '排盘失败，请重试',
         icon: 'none'
       })
     } finally {
       this.setData({ isLoading: false })
+    }
+  },
+
+  // 优先服务端排盘，网络不可达时降级本地算法
+  async requestPaipan() {
+    try {
+      const res = await request({
+        url: '/bazi/paipan',
+        method: 'POST',
+        loadingText: '排盘中...',
+        data: {
+          birthDate: this.data.birthDate,
+          birthTime: this.data.birthTime,
+          gender: this.data.gender
+        }
+      })
+      return res
+    } catch (err) {
+      // 后端明确判定输入不合法（如超出 1900-2100）时不该兜底：
+      // 本地算法只会算出一个同样无效的盘，反而掩盖问题，直接把错误抛给用户。
+      if (err && err.code === 400) {
+        throw new Error(err.message || '出生信息不在支持范围内')
+      }
+
+      console.warn('服务端排盘不可用，降级本地算法:', err)
+      const [year, month, day] = this.data.birthDate.split('-').map(Number)
+      const result = bazi.paipan({
+        year: year,
+        month: month,
+        day: day,
+        hour: this.data.currentHour,
+        gender: this.data.gender
+      })
+      result.isLocalFallback = true
+      return result
     }
   },
 
