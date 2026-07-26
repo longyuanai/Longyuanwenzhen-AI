@@ -92,7 +92,7 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 测试
 
-- jest,34 套件 / 327 用例 / ~10s 全绿(2026-07-25)
+- jest,36 套件 / 371 用例 / ~10s 全绿(2026-07-25)
 - 黄金基准:机主本人盘 2002-11-20 巳时男 + `bazi-skill-dist/cases/` 张学良 / 邵逸夫(均在 1900-2100 范围内)
 - 跑命令:`cd backend && npm test`
 - 测试目录:`utils/__tests__/`(20) + `routes/__tests__/`(8) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
@@ -121,6 +121,8 @@ node backend/scripts/dev-seed-test-user.js
 - **✅ 小程序 API 双前缀 → 已修**:`request.js` 的 `BASE_URL` 已含 `/api/v1`,页面里 url 只写 `/analysis/basic`。曾有页面写全路径拼成 `/api/v1/api/v1/...` 全部 404,且被上层 catch 静默降级掩盖。`normalizePath()` 现会剥掉重复前缀并 warn。
 - **✅ 解读接口只收 birth → 已修**:`/analysis/*` 收 `birth:{year,month,day,hour,minute,gender}`,后端自行排盘。客户端算的四柱/五行不是入参(服务端权威)。小程序侧用 `utils/bazi.js` 的 `buildBirthPayload(result)` 统一构造。
 - **`.env` 变量名**:以 `.env.example` 为准(`WX_SECRET` / `WXPAY_API_KEY` / `WXPAY_MCHID`)。`config/index.js` 兼容旧名 `WX_APPSECRET` / `WX_PAY_KEY`,新代码别用。`config/__tests__/env-wiring.test.js` 锁死这层接线。
+- **小程序配置集中在 `miniprogram/config.js`**:API 地址、客服微信号、版本号只写这一处,页面/工具层一律 require。`app.js` 启动跑 `checkConfig()` 告警占位值(localhost / 未替换的客服微信号)。文件末尾有开测与上线检查清单。
+- **英文链路的术语表必须穷尽算法取值**:`utils/i18n/baziTerms.js` 的 STRENGTH(5 档,对齐 `wangShuai.js`)与 GEJU(13 种,对齐 `geju.js`)漏一个,该盘的英文正文就会混进中文。改这两个算法要同步补表,`utils/__tests__/promptBuilder.en.test.js` 直接对着取值清单校验。
 - **微信 tabBar 图标只认 png/jpg**:`assets/images/*.svg` 是设计源,`*.png` 才是小程序实际引用的。改图标要同步产出 png。
 - **`tasks.md` 与代码栈脱节**:`.codeartsdoer/specs/bazi_app/` 写 React Native + FastAPI + PostgreSQL,实际是原生小程序 + Koa + MongoDB。**以代码为准,不要被 spec 带偏**。
 - **AI 网关超时**:axios 没显式 timeout 默认 0,等 TCP/AI 网关返回 → 21 秒假死。

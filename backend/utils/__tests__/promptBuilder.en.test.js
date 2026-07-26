@@ -39,6 +39,30 @@ describe('baziTerms - 术语映射', () => {
     })
   })
 
+  // 回归：术语表最初只按印象列了几个身强弱档和格局，漏了 偏强/中和/偏弱 与
+  // 羊刃格/普通格，结果这些盘的英文正文里混进中文。术语表必须穷尽算法的全部
+  // 取值 —— 这里直接对着算法源码的取值清单校验，改了算法这条会红。
+  test('身强弱 5 档全部有译法（对齐 wangShuai.js 的分档表）', () => {
+    const ALL_LABELS = ['身强', '偏强', '中和', '偏弱', '身弱']
+    ALL_LABELS.forEach((label) => {
+      const en = T.strength(label)
+      expect(en).not.toBe(label)          // 必须被翻译，不是回退原文
+      expect(en).not.toMatch(/[一-龥]/)
+    })
+  })
+
+  test('格局 13 种全部有译法（对齐 geju.js 的返回值）', () => {
+    const ALL_GEJU = [
+      '正官格', '七杀格', '正印格', '偏印格', '正财格', '偏财格',
+      '食神格', '伤官格', '建禄格', '羊刃格', '从强格', '从弱格', '普通格'
+    ]
+    ALL_GEJU.forEach((name) => {
+      const en = T.geju(name)
+      expect(en).not.toMatch(/[一-龥]/)
+      expect(en).not.toContain('classical structure') // 那是查不到时的兜底
+    })
+  })
+
   test('十神用英文八字圈通行译名', () => {
     expect(T.tenGod('七杀')).toBe('Seven Killings')
     expect(T.tenGod('食神')).toBe('Eating God')

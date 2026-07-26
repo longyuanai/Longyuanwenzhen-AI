@@ -26,6 +26,7 @@
 │   │   ├── request.js   # 网络请求封装
 │   │   └── util.js      # 通用工具函数
 │   ├── assets/          # 静态资源
+│   ├── config.js        # 集中配置(API 地址/客服微信号,含开测与上线检查清单)
 │   ├── app.js           # 小程序入口
 │   ├── app.json         # 小程序配置
 │   └── app.wxss         # 全局样式
@@ -208,10 +209,17 @@ npm start    # 生产模式
 ### 3. 配置说明
 
 #### 小程序配置
-修改 `miniprogram/utils/request.js` 中的 `BASE_URL`：
+所有需要按环境改的值都集中在 `miniprogram/config.js`，页面与工具层一律引用它，
+不要在别处写死（客服微信号曾在两个页面各写一份，漏改一处熟人就加不到人）。
+
 ```javascript
-const BASE_URL = 'https://your-domain.com/api/v1'
+const API_HOST = 'https://your-domain.com'   // 内测填内网 IP，上线填 https 域名
+const CONTACT_WECHAT = 'your-wechat-id'      // 付费开通与意见反馈都走这个号
 ```
+
+`app.js` 启动时会跑 `checkConfig()`，占位值未替换、API 指向 localhost、
+线上用 http 等情况都会在控制台告警（只提示不阻断，本机开发不受影响）。
+文件末尾附了开测与上线的完整检查清单。
 
 #### 后端配置
 编辑 `backend/.env` 文件：

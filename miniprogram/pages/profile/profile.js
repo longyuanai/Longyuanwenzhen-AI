@@ -9,8 +9,8 @@
 // （排盘是纯函数，服务端重算保证与解读依据的盘一致）。
 
 // 内测期反馈收口：走客服微信，不做站内工单系统（熟人 50 人量级用不上）。
-// 与 pages/four-school/four-school.js 的 CONTACT_WECHAT 保持一致，正式上线前替换。
-const CONTACT_WECHAT = 'bazi-help-2026'
+// 微信号与版本号统一在 miniprogram/config.js。
+const { CONTACT_WECHAT, APP_VERSION } = require('../../config')
 
 const { getBaziHistory, clearBaziHistory, showConfirm, showSuccess } = require('../../utils/util')
 const { request } = require('../../utils/request')
@@ -72,7 +72,8 @@ Page({
     userInfo: null,
     hasUserInfo: false,
     historyList: [],
-    isSyncing: false
+    isSyncing: false,
+    appVersion: APP_VERSION
   },
 
   onLoad() {

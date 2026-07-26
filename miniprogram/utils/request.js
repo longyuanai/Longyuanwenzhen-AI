@@ -1,15 +1,16 @@
 // utils/request.js - 网络请求封装
 //
-// ⚠️ BASE_URL 上线前必须改成 https 真实域名 + 在小程序后台配置合法 request 域名。
-// 当前 8080 对齐后端默认端口（config/index.js → port: process.env.PORT || 8080）。
-//
 // ⚠️ url 传参约定：BASE_URL 已经包含 /api/v1，各页面只写 '/analysis/basic'
 // 这样的业务路径。曾有页面写成 '/api/v1/analysis/basic'，拼出
 // /api/v1/api/v1/analysis/basic 全部 404，且被上层 catch 静默降级掩盖了很久。
 // normalizePath() 会剥掉重复前缀并告警，属兜底，不是让你继续写全路径的许可。
+//
+// 地址与超时改在 miniprogram/config.js，不要在这里写死。
 
-const API_PREFIX = '/api/v1'
-const BASE_URL = 'http://localhost:8080' + API_PREFIX
+const appConfig = require('../config')
+
+const API_PREFIX = appConfig.API_PREFIX
+const BASE_URL = appConfig.API_BASE
 
 // 剥掉误带的 /api/v1 前缀，避免与 BASE_URL 拼成双前缀
 function normalizePath(url) {
@@ -50,7 +51,7 @@ function request(options) {
         'Authorization': token ? `Bearer ${token}` : '',
         ...options.header
       },
-      timeout: options.timeout || 10000,
+      timeout: options.timeout || appConfig.REQUEST_TIMEOUT,
       success: (res) => {
         // 隐藏加载提示
         if (options.showLoading !== false) {

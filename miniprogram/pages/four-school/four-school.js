@@ -10,8 +10,8 @@
 const { request } = require('../../utils/request')
 const { buildBirthPayload } = require('../../utils/bazi')
 
-// 客服微信号(占位,正式上线前替换)
-const CONTACT_WECHAT = 'bazi-help-2026'
+// 客服微信号统一在 miniprogram/config.js，别在页面里各写一份
+const { CONTACT_WECHAT } = require('../../config')
 
 Page({
   data: {

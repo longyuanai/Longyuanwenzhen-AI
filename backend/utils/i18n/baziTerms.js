@@ -69,14 +69,14 @@ const TEN_GOD = {
   日主: 'Day Master'
 }
 
-// 身强弱
+// 身强弱：这 5 档是 utils/wangShuai.js 的全部取值（按同党占比分档），
+// 少一档就会有中文漏进英文正文。改 wangShuai 的分档表要同步改这里。
 const STRENGTH = {
   身强: 'Strong Day Master',
-  身弱: 'Weak Day Master',
-  身旺: 'Very Strong Day Master',
-  从强: 'Follow-the-Strong',
-  从弱: 'Follow-the-Weak',
-  均衡: 'Balanced Day Master'
+  偏强: 'Moderately Strong Day Master',
+  中和: 'Balanced Day Master',
+  偏弱: 'Moderately Weak Day Master',
+  身弱: 'Weak Day Master'
 }
 
 // 季节（调候用）
@@ -87,10 +87,10 @@ const SEASON = {
   冬: 'Winter'
 }
 
-// 格局：保留拼音（这是专有结构名）+ 意译说明
+// 格局：保留拼音（这是专有结构名）+ 意译说明。
+// 以下 13 个是 utils/geju.js 的全部取值，新增格局要同步补这里，
+// 否则中文格局名会漏进英文正文（utils/__tests__/localFallback.en.test.js 会拦）。
 const GEJU = {
-  建禄格: 'Jian Lu (Established Prosperity) structure',
-  月劫格: 'Yue Jie (Monthly Rob Wealth) structure',
   正官格: 'Direct Officer structure',
   七杀格: 'Seven Killings structure',
   正印格: 'Direct Resource structure',
@@ -99,8 +99,11 @@ const GEJU = {
   偏财格: 'Indirect Wealth structure',
   食神格: 'Eating God structure',
   伤官格: 'Hurting Officer structure',
+  建禄格: 'Jian Lu (Established Prosperity) structure',
+  羊刃格: 'Yang Ren (Blade) structure',
   从强格: 'Follow-the-Strong special structure',
-  从弱格: 'Follow-the-Weak special structure'
+  从弱格: 'Follow-the-Weak special structure',
+  普通格: 'no dominant structure (a mixed chart)'
 }
 
 // 查表并回退原文：宁可提示词里出现中文，也不能出现 undefined
