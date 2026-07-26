@@ -150,6 +150,114 @@ router.get('/history', authRequired, async (ctx) => {
 })
 
 /**
+ * 批量同步本机排盘记录到云端
+ * POST /api/v1/bazi/history/sync
+ * body: { items: [{ birth:{...}, baziStr?, label? }] }
+ *
+ * 用户匿名时排的盘只在本机 storage 里，登录后调一次这个接口传上来，
+ * 换设备也能看到。逐条走幂等 upsert，已存在的盘不会重复。
+ *
+ * 注意：必须声明在 /history/:id 之前，否则 'sync' 会被当成 id 吞掉。
+ */
+router.post('/history/sync', authRequired, async (ctx) => {
+  try {
+    const { items } = ctx.request.body || {}
+    if (!Array.isArray(items)) {
+      ctx.status = 400
+      ctx.body = { code: 400, message: 'items 必须为数组', data: null, timestamp: Date.now() }
+      return
+    }
+    if (items.length > recordStore.SYNC_MAX_ITEMS) {
+      ctx.status = 400
+      ctx.body = {
+        code: 400,
+        message: `单次最多同步 ${recordStore.SYNC_MAX_ITEMS} 条`,
+        data: null,
+        timestamp: Date.now()
+      }
+      return
+    }
+
+    // 逐条校验 birth：一条脏数据不该让整批失败，跳过并计入 invalid
+    const valid = []
+    let invalid = 0
+    for (const item of items) {
+      const b = item && item.birth
+      if (!b || !GENDER_MAP[b.gender]) { invalid++; continue }
+      const nums = [b.year, b.month, b.day, b.hour].map(Number)
+      if (nums.some((n) => !Number.isInteger(n))) { invalid++; continue }
+      // 复用排盘引擎的边界校验，超界的盘不入库
+      try {
+        paipan({
+          year: nums[0], month: nums[1], day: nums[2], hour: nums[3],
+          minute: Number(b.minute || 0), gender: GENDER_MAP[b.gender]
+        })
+      } catch (e) {
+        invalid++
+        continue
+      }
+      valid.push({
+        birth: {
+          year: nums[0], month: nums[1], day: nums[2], hour: nums[3],
+          minute: Number(b.minute || 0), gender: GENDER_MAP[b.gender]
+        },
+        baziStr: item.baziStr,
+        label: item.label
+      })
+    }
+
+    const { saved, skipped } = await recordStore.saveMany(ctx.state.user.userId, valid)
+    logger.info(`同步排盘记录: 用户 ${ctx.state.user.userId}, 收到 ${items.length} 条, 入库 ${saved} 条, 无效 ${invalid} 条`)
+
+    ctx.body = {
+      code: 200,
+      message: 'success',
+      data: { received: items.length, saved, skipped, invalid },
+      timestamp: Date.now()
+    }
+  } catch (err) {
+    logger.error('同步排盘记录错误:', err)
+    ctx.status = 500
+    ctx.body = { code: 500, message: '同步排盘记录失败', data: null, timestamp: Date.now() }
+  }
+})
+
+/**
+ * 修改排盘记录备注名
+ * PUT /api/v1/bazi/history/:id
+ * body: { label }
+ *
+ * 用来区分多张盘（"我自己" / "老王"）。只能改自己的记录。
+ *
+ * 用 PUT 而非语义上更贴切的 PATCH：小程序的 wx.request 只支持
+ * OPTIONS/GET/HEAD/POST/PUT/DELETE/TRACE/CONNECT，发不出 PATCH。
+ */
+router.put('/history/:id', authRequired, async (ctx) => {
+  try {
+    const { label } = ctx.request.body || {}
+    if (typeof label !== 'string') {
+      ctx.status = 400
+      ctx.body = { code: 400, message: 'label 必须为字符串', data: null, timestamp: Date.now() }
+      return
+    }
+
+    const record = await recordStore.setLabel(ctx.state.user.userId, ctx.params.id, label)
+    if (!record) {
+      // 记录不存在，或属于别人 —— 统一返 404，不泄露「存在但无权」
+      ctx.status = 404
+      ctx.body = { code: 404, message: '记录不存在', data: null, timestamp: Date.now() }
+      return
+    }
+
+    ctx.body = { code: 200, message: 'success', data: record, timestamp: Date.now() }
+  } catch (err) {
+    logger.error('修改排盘记录备注错误:', err)
+    ctx.status = 500
+    ctx.body = { code: 500, message: '修改备注失败', data: null, timestamp: Date.now() }
+  }
+})
+
+/**
  * 清空排盘历史
  * DELETE /api/v1/bazi/history
  *

@@ -37,7 +37,9 @@ docker exec bazi-mongo mongosh --quiet --eval "db.runCommand({ping:1})"
 
 # 后端 + LightRAG 都通
 curl http://localhost:8080/health
-# 期望: {"status":"ok","lightrag":"up",...}
+# 期望: {"code":200,"message":"success","data":{"backend":"ok","lightrag":"up",...},...}
+# 注意 lightrag 为 "down" 时 /health 仍返 200 —— 这是刻意设计（RAG 挂了产品照常出解读，
+# 只是没古籍引证）。要判 LightRAG 是否在跑，看 data.lightrag 字段，不要看 HTTP 状态码。
 
 # RAG 引证命中
 curl -X POST http://localhost:8080/api/v1/analysis/checkup \
@@ -130,7 +132,11 @@ npm run seed:reset
 
 ## 反馈收集
 
-让熟人在小程序「我的 → 意见反馈」发消息;每周汇总到 `.codeartsdoer/specs/bazi_miniprogram/feedback/`。
+小程序「我的 → 意见反馈」弹出客服微信号供复制(`pages/profile/profile.js` 的
+`CONTACT_WECHAT`,**开测前必须改成你自己的微信号**,当前是占位值 `bazi-help-2026`)。
+熟人加微信反馈,每周汇总到 `.codeartsdoer/specs/bazi_miniprogram/feedback/`。
+
+没做站内工单系统:50 人量级用微信收口成本最低,且能追问细节。
 
 ## 退出条件
 

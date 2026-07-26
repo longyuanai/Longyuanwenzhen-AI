@@ -8,6 +8,10 @@
 // 服务端记录只存出生信息，不存完整命盘 —— 点开时拿 birth 重新排一次即可
 // （排盘是纯函数，服务端重算保证与解读依据的盘一致）。
 
+// 内测期反馈收口：走客服微信，不做站内工单系统（熟人 50 人量级用不上）。
+// 与 pages/four-school/four-school.js 的 CONTACT_WECHAT 保持一致，正式上线前替换。
+const CONTACT_WECHAT = 'bazi-help-2026'
+
 const { getBaziHistory, clearBaziHistory, showConfirm, showSuccess } = require('../../utils/util')
 const { request } = require('../../utils/request')
 const { buildBirthPayload } = require('../../utils/bazi')
@@ -39,6 +43,8 @@ function fromLocal(record) {
     birthTime: record.birthTime || `${pad(birth.hour)}:${pad(birth.minute)}`,
     gender: birth.gender,
     baziStr: pillarsOf(record),
+    label: '',        // 备注名只在云端记录上有，本机记录同步后才能起名
+    id: null,
     fromServer: false,
     result: record
   }
@@ -54,6 +60,8 @@ function fromServer(rec) {
     birthTime: `${pad(b.hour)}:${pad(b.minute || 0)}`,
     gender: b.gender,
     baziStr: rec.baziStr || '',
+    label: rec.label || '',
+    id: rec.id,       // 改备注名要用
     fromServer: true,
     result: null
   }
@@ -86,7 +94,7 @@ Page({
     })
   },
 
-  // 加载历史记录：先渲染本地（立即可见），再拉服务端合并
+  // 加载历史记录：先渲染本地（立即可见），再上传本机记录、拉服务端合并
   async loadHistory() {
     const local = getBaziHistory().map(fromLocal).filter(Boolean)
     this.setData({ historyList: local })
@@ -95,6 +103,10 @@ Page({
 
     this.setData({ isSyncing: true })
     try {
+      // 先把本机记录推上去（匿名时排的盘登录后才有归属），再拉全量。
+      // 顺序不能反：先拉后推的话，这一轮列表里本机记录还是「本机」标签。
+      await this.uploadLocalRecords(local)
+
       const remote = await request({
         url: '/bazi/history',
         method: 'GET',
@@ -122,6 +134,64 @@ Page({
       console.warn('同步服务端排盘历史失败:', err)
     } finally {
       this.setData({ isSyncing: false })
+    }
+  },
+
+  // 把本机记录同步到云端。失败不影响后续拉取（本地记录仍在，下次进页面重试）。
+  async uploadLocalRecords(local) {
+    if (!local.length) return
+    try {
+      await request({
+        url: '/bazi/history/sync',
+        method: 'POST',
+        showLoading: false,
+        data: {
+          items: local.map((item) => ({
+            birth: item.birth,
+            baziStr: item.baziStr,
+            label: item.label
+          }))
+        }
+      })
+    } catch (err) {
+      console.warn('同步本机排盘记录失败:', err)
+    }
+  },
+
+  // 给记录起备注名（区分「我自己」/「老王」）。仅云端记录支持，本机记录先同步再改。
+  async renameRecord(e) {
+    const index = e.currentTarget.dataset.index
+    const item = this.data.historyList[index]
+    if (!item) return
+
+    if (!item.fromServer) {
+      wx.showToast({ title: '登录后可为记录起名', icon: 'none' })
+      return
+    }
+
+    const res = await new Promise((resolve) => {
+      wx.showModal({
+        title: '备注名',
+        editable: true,
+        placeholderText: '如：我自己、老王',
+        content: item.label || '',
+        success: resolve,
+        fail: () => resolve({ confirm: false })
+      })
+    })
+    if (!res.confirm) return
+
+    try {
+      await request({
+        url: `/bazi/history/${item.id}`,
+        method: 'PUT',
+        showLoading: false,
+        data: { label: res.content || '' }
+      })
+      this.loadHistory()
+    } catch (err) {
+      console.error('修改备注失败:', err)
+      wx.showToast({ title: '修改失败，请重试', icon: 'none' })
     }
   },
 
@@ -185,6 +255,22 @@ Page({
 
     this.setData({ historyList: [] })
     showSuccess('清除成功')
+  },
+
+  // 意见反馈：复制客服微信号，引导加微信反馈
+  showFeedback() {
+    wx.showModal({
+      title: '意见反馈',
+      content: `内测期间遇到问题或有建议，请加微信反馈：\n${CONTACT_WECHAT}`,
+      confirmText: '复制微信号',
+      success: (res) => {
+        if (!res.confirm) return
+        wx.setClipboardData({
+          data: CONTACT_WECHAT,
+          success: () => wx.showToast({ title: '微信号已复制', icon: 'success' })
+        })
+      }
+    })
   },
 
   // 分享

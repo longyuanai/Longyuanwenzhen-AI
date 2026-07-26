@@ -14,6 +14,10 @@ const logger = require('./logger')
 const memory = new Map()
 // 单用户内存记录上限，防止长跑进程无限增长
 const MEMORY_LIMIT = 50
+// 备注名长度上限，超出截断（用户直接输入，不设限会被塞进超长字符串）
+const LABEL_MAX_LEN = 20
+// 单次批量同步的条数上限，防止客户端一次塞太多
+const SYNC_MAX_ITEMS = 50
 
 function hasMongo() {
   return mongoose.connection.readyState === 1
@@ -41,6 +45,11 @@ function cloneRecord(r) {
   return { ...r, birth: { ...r.birth } }
 }
 
+// 备注名归一：用户直接输入，去空白并截断
+function normalizeLabel(label) {
+  return String(label == null ? '' : label).trim().slice(0, LABEL_MAX_LEN)
+}
+
 /**
  * 保存一条排盘记录（幂等：同用户同出生信息只留一条）。
  * @returns {Promise<object|null>} 记录（含 id）；存储不可用时返回 null
@@ -62,7 +71,7 @@ async function save(userId, birth, baziStr, label) {
           'birth.gender': b.gender
         },
         {
-          $set: { baziStr, updatedAt: new Date(), ...(label ? { label } : {}) },
+          $set: { baziStr, updatedAt: new Date(), ...(label ? { label: normalizeLabel(label) } : {}) },
           $setOnInsert: { userId: uid, birth: b, createdAt: new Date() }
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }
@@ -83,14 +92,14 @@ async function save(userId, birth, baziStr, label) {
   if (existing) {
     existing.baziStr = baziStr
     existing.updatedAt = now
-    if (label) existing.label = label
+    if (label) existing.label = normalizeLabel(label)
     return cloneRecord(existing)
   }
   const record = {
     id: `mem_${uid}_${key}`,
     birth: b,
     baziStr,
-    label: label || '',
+    label: normalizeLabel(label),
     createdAt: now,
     updatedAt: now
   }
@@ -125,6 +134,59 @@ async function list(userId, limit = 20) {
     .sort((a, b) => b.createdAt - a.createdAt)
     .slice(0, limit)
     .map(cloneRecord)
+}
+
+/**
+ * 修改某条记录的备注名。
+ *
+ * @returns {Promise<object|null>} 更新后的记录；记录不存在或不属于该用户时返回 null
+ */
+async function setLabel(userId, id, label) {
+  const uid = String(userId)
+  const text = normalizeLabel(label)
+
+  if (hasMongo()) {
+    if (!mongoose.Types.ObjectId.isValid(String(id))) return null
+    try {
+      // 条件里带 userId：别人的记录改不动，不需要先查再判
+      const doc = await BaziRecord.findOneAndUpdate(
+        { _id: id, userId: uid },
+        { $set: { label: text, updatedAt: new Date() } },
+        { new: true }
+      )
+      return toView(doc)
+    } catch (err) {
+      logger.warn(`排盘记录改名失败(用户 ${uid}, 记录 ${id}): ${err.message}`)
+      return null
+    }
+  }
+
+  const record = (memory.get(uid) || []).find((r) => r.id === id)
+  if (!record) return null
+  record.label = text
+  record.updatedAt = new Date()
+  return cloneRecord(record)
+}
+
+/**
+ * 批量保存排盘记录。
+ *
+ * 给小程序「登录后把本机记录同步到云端」用：匿名时排的盘存在本地 storage，
+ * 登录后一次性传上来，换设备也能看到。逐条走 save() 的幂等逻辑，
+ * 已存在的盘只会更新不会重复。
+ *
+ * @param {Array} items [{ birth, baziStr?, label? }]
+ * @returns {Promise<{saved:number, skipped:number}>}
+ */
+async function saveMany(userId, items) {
+  let saved = 0
+  let skipped = 0
+  for (const item of Array.isArray(items) ? items : []) {
+    const rec = await save(userId, item.birth, item.baziStr || '', item.label)
+    if (rec) saved++
+    else skipped++
+  }
+  return { saved, skipped }
 }
 
 /**
@@ -175,4 +237,14 @@ function _reset() {
   memory.clear()
 }
 
-module.exports = { save, list, clear, _reset, MEMORY_LIMIT }
+module.exports = {
+  save,
+  saveMany,
+  list,
+  setLabel,
+  clear,
+  _reset,
+  MEMORY_LIMIT,
+  LABEL_MAX_LEN,
+  SYNC_MAX_ITEMS
+}

@@ -287,6 +287,8 @@ cd backend && npm run seed:friends:10
 ### 排盘接口
 - `POST /api/v1/bazi/paipan` - 生成八字排盘(免费,免登录可用;带 token 则同时存入历史)
 - `GET /api/v1/bazi/history` - 查询排盘历史(鉴权;`?limit=` 1-100,默认 20)
+- `POST /api/v1/bazi/history/sync` - 批量同步本机排盘记录到云端(鉴权;登录后合并本地记录)
+- `PUT /api/v1/bazi/history/:id` - 修改记录备注名(鉴权)
 - `DELETE /api/v1/bazi/history` - 清空本人排盘历史(鉴权)
 
 ### 解读接口

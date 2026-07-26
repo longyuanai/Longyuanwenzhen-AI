@@ -56,6 +56,8 @@ node backend/scripts/dev-seed-test-user.js
 | 用户 | `GET /api/v1/user/profile` | 鉴权 |
 | 排盘 | `POST /api/v1/bazi/paipan` | 免费(`authOptional`),服务端权威排盘;登录则落库 |
 | 排盘 | `GET /api/v1/bazi/history` | 鉴权,返回本人排盘记录(`?limit=` 1-100,默认 20) |
+| 排盘 | `POST /api/v1/bazi/history/sync` | 鉴权,批量同步本机记录(登录后合并) |
+| 排盘 | `PUT /api/v1/bazi/history/:id` | 鉴权,改备注名(用 PUT 因 wx.request 不支持 PATCH) |
 | 排盘 | `DELETE /api/v1/bazi/history` | 鉴权,清空本人记录 |
 | 解读 | `POST /api/v1/analysis/basic` | 免费 |
 | 解读 | `POST /api/v1/analysis/deep` | 鉴权 + 付费(deep_report / VIP) |
@@ -90,7 +92,7 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 测试
 
-- jest,34 套件 / 313 用例 / ~9s 全绿(2026-07-25)
+- jest,34 套件 / 327 用例 / ~10s 全绿(2026-07-25)
 - 黄金基准:机主本人盘 2002-11-20 巳时男 + `bazi-skill-dist/cases/` 张学良 / 邵逸夫(均在 1900-2100 范围内)
 - 跑命令:`cd backend && npm test`
 - 测试目录:`utils/__tests__/`(20) + `routes/__tests__/`(8) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)

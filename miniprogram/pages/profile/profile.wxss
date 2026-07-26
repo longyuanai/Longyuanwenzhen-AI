@@ -101,6 +101,11 @@
   margin-right: auto;
 }
 
+/* 有备注名时由它领头，日期跟随其后 */
+.history-label + .history-date {
+  margin-right: auto;
+}
+
 .history-gender {
   font-size: 26rpx;
   color: #999;
@@ -164,4 +169,27 @@
 .about-value {
   font-size: 28rpx;
   color: #333;
+}
+
+/* 备注名：区分多张盘（"我自己" / "老王"），排在日期前面 */
+.history-label {
+  font-size: 26rpx;
+  color: #4A90E2;
+  font-weight: 500;
+}
+
+.history-hint {
+  margin-top: 16rpx;
+  font-size: 22rpx;
+  color: #bbb;
+  text-align: center;
+}
+
+/* 意见反馈：可点条目，箭头提示可交互 */
+.feedback-item {
+  align-items: center;
+}
+
+.feedback-arrow {
+  color: #4A90E2;
 }

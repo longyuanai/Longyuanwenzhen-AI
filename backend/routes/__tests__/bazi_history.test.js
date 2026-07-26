@@ -37,8 +37,12 @@ async function invoke(method, path, { body = {}, query = {}, auth = null } = {})
     body: null,
     set: function () {}
   }
-  const layer = router.stack.find((l) => l.methods.includes(method) && l.path === path)
+  // 用 layer.match 而非精确比较：PATCH /history/:id 这类参数路由
+  // 按字面路径是匹配不上的，还要把 :id 解出来填进 ctx.params
+  const layer = router.stack.find((l) => l.methods.includes(method) && l.match(path))
   if (!layer) throw new Error(`路由未注册: ${method} ${path}`)
+  const captures = layer.captures(path)
+  ctx.params = layer.params(path, captures, {})
   const mws = layer.stack
   let i = 0
   async function next() {
@@ -214,5 +218,130 @@ describe('DELETE /api/v1/bazi/history', () => {
     const ctx = await invoke('DELETE', '/history', { auth: authFor('u-empty') })
     expect(ctx.status).toBe(200)
     expect(ctx.body.data.deleted).toBe(0)
+  })
+})
+
+describe('POST /api/v1/bazi/history/sync - 批量同步本机记录', () => {
+  const ITEM = {
+    birth: { year: 2002, month: 11, day: 20, hour: 10, minute: 0, gender: 'male' },
+    baziStr: '壬午 辛亥 壬辰 乙巳'
+  }
+
+  test('无 token → 401', async () => {
+    const ctx = await invoke('POST', '/history/sync', { body: { items: [ITEM] } })
+    expect(ctx.status).toBe(401)
+  })
+
+  test('批量入库，之后 history 能读到', async () => {
+    const ctx = await invoke('POST', '/history/sync', {
+      body: {
+        items: [
+          ITEM,
+          { birth: { year: 1985, month: 3, day: 15, hour: 14, gender: 'female' }, baziStr: 'x', label: '老王' }
+        ]
+      },
+      auth: authFor('u1')
+    })
+    expect(ctx.status).toBe(200)
+    expect(ctx.body.data.saved).toBe(2)
+    expect(ctx.body.data.invalid).toBe(0)
+
+    const list = await invoke('GET', '/history', { auth: authFor('u1') })
+    expect(list.body.data).toHaveLength(2)
+    expect(list.body.data.find((r) => r.label === '老王')).toBeDefined()
+  })
+
+  test('与已有记录幂等：同一个盘不重复', async () => {
+    await invoke('POST', '/paipan', { body: PAIPAN_BODY, auth: authFor('u1') })
+    await invoke('POST', '/history/sync', { body: { items: [ITEM] }, auth: authFor('u1') })
+
+    const list = await invoke('GET', '/history', { auth: authFor('u1') })
+    expect(list.body.data).toHaveLength(1)
+  })
+
+  test('脏数据被跳过，不拖垮整批', async () => {
+    const ctx = await invoke('POST', '/history/sync', {
+      body: {
+        items: [
+          ITEM,
+          { birth: { year: 1800, month: 1, day: 1, hour: 0, gender: 'male' } }, // 超界
+          { birth: { year: 2000, month: 1, day: 1, hour: 0, gender: 'x' } },    // 性别非法
+          { birth: null },                                                       // 缺 birth
+          {}                                                                     // 空对象
+        ]
+      },
+      auth: authFor('u1')
+    })
+    expect(ctx.status).toBe(200)
+    expect(ctx.body.data.saved).toBe(1)
+    expect(ctx.body.data.invalid).toBe(4)
+  })
+
+  test('items 非数组 → 400', async () => {
+    const ctx = await invoke('POST', '/history/sync', { body: { items: 'nope' }, auth: authFor('u1') })
+    expect(ctx.status).toBe(400)
+  })
+
+  test('超过单次上限 → 400', async () => {
+    const store = require('../../utils/baziRecordStore')
+    const items = Array.from({ length: store.SYNC_MAX_ITEMS + 1 }, () => ITEM)
+    const ctx = await invoke('POST', '/history/sync', { body: { items }, auth: authFor('u1') })
+    expect(ctx.status).toBe(400)
+  })
+})
+
+describe('PUT /api/v1/bazi/history/:id - 备注名', () => {
+  async function seedOne(user) {
+    const ctx = await invoke('POST', '/paipan', { body: PAIPAN_BODY, auth: authFor(user) })
+    return ctx.body.data.baziId
+  }
+
+  test('无 token → 401', async () => {
+    const ctx = await invoke('PUT', '/history/whatever', { body: { label: 'x' } })
+    expect(ctx.status).toBe(401)
+  })
+
+  test('改名成功并在 history 里生效', async () => {
+    const id = await seedOne('u1')
+    const ctx = await invoke('PUT', `/history/${id}`, { body: { label: '我自己' }, auth: authFor('u1') })
+    expect(ctx.status).toBe(200)
+    expect(ctx.body.data.label).toBe('我自己')
+
+    const list = await invoke('GET', '/history', { auth: authFor('u1') })
+    expect(list.body.data[0].label).toBe('我自己')
+  })
+
+  test('改不了别人的记录 → 404', async () => {
+    const id = await seedOne('u1')
+    const ctx = await invoke('PUT', `/history/${id}`, { body: { label: '篡改' }, auth: authFor('u2') })
+    expect(ctx.status).toBe(404)
+
+    const list = await invoke('GET', '/history', { auth: authFor('u1') })
+    expect(list.body.data[0].label).toBe('')
+  })
+
+  test('不存在的 id → 404', async () => {
+    const ctx = await invoke('PUT', '/history/no-such-id', { body: { label: 'x' }, auth: authFor('u1') })
+    expect(ctx.status).toBe(404)
+  })
+
+  test('label 非字符串 → 400', async () => {
+    const id = await seedOne('u1')
+    const ctx = await invoke('PUT', `/history/${id}`, { body: { label: 123 }, auth: authFor('u1') })
+    expect(ctx.status).toBe(400)
+  })
+
+  test('超长 label 被截断，空串可清除备注', async () => {
+    const store = require('../../utils/baziRecordStore')
+    const id = await seedOne('u1')
+
+    const long = await invoke('PUT', `/history/${id}`, {
+      body: { label: '很'.repeat(100) },
+      auth: authFor('u1')
+    })
+    expect(long.body.data.label).toHaveLength(store.LABEL_MAX_LEN)
+
+    const cleared = await invoke('PUT', `/history/${id}`, { body: { label: '  ' }, auth: authFor('u1') })
+    expect(cleared.body.data.label).toBe('')
   })
 })
