@@ -13,11 +13,14 @@
 jest.mock('../../models/Order')
 jest.mock('../../models/User')
 
+const mongoose = require('mongoose')
 const Order = require('../../models/Order')
 const User = require('../../models/User')
 
 jest.mock('../../config', () => ({
-  wxpay: { apiKey: 'test-api-key-for-sign' }
+  wxpay: { apiKey: 'test-api-key-for-sign' },
+  // 用户侧订单接口经 authRequired，需要 jwt.secret 才能验签放行
+  jwt: { secret: 'test-secret-must-be-long-enough-for-jwt-validation' }
 }))
 
 const { md5Sign } = require('../../utils/wxpay')
@@ -62,6 +65,9 @@ async function invokeCallback(body) {
 }
 
 beforeEach(() => {
+  // 模型层已被 mock，但路由入口会先判连接状态才继续 —— 声明「库是通的」，
+  // 否则所有用例都会被 Mongo 未就绪的快速失败分支拦下。
+  mongoose.connection.readyState = 1
   Order.findById.mockReset()
   User.findById.mockReset()
 })
@@ -185,5 +191,84 @@ describe('POST /api/v1/order/callback', () => {
     const ctx = await invokeCallback(params)
     expect(ctx.body).toContain('FAIL')
     expect(orderDoc.status).toBe('pending')
+  })
+})
+
+describe('POST /api/v1/order/callback - MongoDB 不可用', () => {
+  // 回归：库连不上时若放任 mongoose 缓冲，要挂满 bufferTimeoutMS(默认 10s)
+  // 才失败，微信侧可能已判超时。必须立刻返回 FAIL 让它按重推机制稍后再送。
+  test('库未连接 → 立刻 503 FAIL，且不查库', async () => {
+    mongoose.connection.readyState = 0
+    const ctx = await invokeCallback(signedParams())
+
+    expect(ctx.status).toBe(503)
+    expect(ctx.body).toContain('FAIL')
+    expect(Order.findById).not.toHaveBeenCalled()
+  })
+
+  test('库未连接时绝不把订单判成已支付', async () => {
+    mongoose.connection.readyState = 0
+    const ctx = await invokeCallback(signedParams())
+    expect(ctx.body).not.toContain('SUCCESS')
+  })
+})
+
+describe('用户侧订单接口 - MongoDB 不可用', () => {
+  // 回归：此前 /order/create 会靠 mongoose 缓冲挂满 10s 才 500，
+  // 用户点一下支付要干等十秒才看到失败。现在入口即判，立刻 503。
+  function authFor(userId) {
+    const jwt = require('jsonwebtoken')
+    const config = require('../../config')
+    return `Bearer ${jwt.sign({ userId, openid: 'o' + userId }, config.jwt.secret, { expiresIn: '1h' })}`
+  }
+
+  async function invokeUser(method, path, auth) {
+    const ctx = {
+      method,
+      url: path,
+      params: {},
+      query: {},
+      headers: auth ? { authorization: auth } : {},
+      request: { body: { productType: 'deep_report' } },
+      state: {},
+      status: 200,
+      body: null,
+      set: function () {}
+    }
+    const layer = router.stack.find((l) => l.methods.includes(method) && l.path === path)
+    if (!layer) throw new Error(`路由未注册: ${method} ${path}`)
+    let i = 0
+    async function next() {
+      if (i >= layer.stack.length) return
+      await layer.stack[i++](ctx, next)
+    }
+    await next()
+    return ctx
+  }
+
+  test('库未连接 → /order/create 立刻 503，且完全不碰 Mongo', async () => {
+    mongoose.connection.readyState = 0
+    const ctx = await invokeUser('POST', '/create', authFor('507f1f77bcf86cd799439011'))
+
+    expect(ctx.status).toBe(503)
+    expect(ctx.body.code).toBe(503)
+    // 关键：没有把查询丢给 mongoose 缓冲，所以不会挂满 10s
+    expect(Order.findOne).not.toHaveBeenCalled()
+  })
+
+  test('库未连接 → /order/list 立刻 503', async () => {
+    mongoose.connection.readyState = 0
+    const ctx = await invokeUser('GET', '/list', authFor('507f1f77bcf86cd799439011'))
+    expect(ctx.status).toBe(503)
+    expect(Order.find).not.toHaveBeenCalled()
+  })
+
+  test('库连接正常时不被 503 拦掉', async () => {
+    mongoose.connection.readyState = 1
+    Order.find.mockReturnValue({
+      sort: () => ({ limit: async () => [] })
+    })
+    const ctx = await invokeUser('GET', '/list', authFor('507f1f77bcf86cd799439011'))
+    expect(ctx.status).toBe(200)
   })
 })

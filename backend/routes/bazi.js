@@ -149,4 +149,29 @@ router.get('/history', authRequired, async (ctx) => {
   }
 })
 
+/**
+ * 清空排盘历史
+ * DELETE /api/v1/bazi/history
+ *
+ * 只删自己的记录。小程序「清除历史」会同时清本地 storage 与服务端记录 ——
+ * 只清一边的话，下次进页面另一边的记录又回来了。
+ */
+router.delete('/history', authRequired, async (ctx) => {
+  try {
+    const deleted = await recordStore.clear(ctx.state.user.userId)
+    logger.info(`清除排盘历史: 用户 ${ctx.state.user.userId}, ${deleted} 条`)
+
+    ctx.body = {
+      code: 200,
+      message: 'success',
+      data: { deleted },
+      timestamp: Date.now()
+    }
+  } catch (err) {
+    logger.error('清除排盘历史错误:', err)
+    ctx.status = 500
+    ctx.body = { code: 500, message: '清除排盘历史失败', data: null, timestamp: Date.now() }
+  }
+})
+
 module.exports = router

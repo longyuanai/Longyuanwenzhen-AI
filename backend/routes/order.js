@@ -50,6 +50,39 @@ async function loadOwnedOrder(ctx, orderId, denyMessage) {
   return order
 }
 
+// 订单接口强依赖 Mongo：订单是财务记录，不能像排盘历史那样用内存兜底 ——
+// 进程一重启就消失的「订单」比报错更危险。
+//
+// 但不能放任 mongoose 缓冲：连不上库时它会把查询挂到 bufferTimeoutMS（默认
+// 10s）才抛错，用户点一下支付要干等十秒再看到失败，与已修过的 AI 网关假死
+// 是同一类问题。这里在入口处直接判连接状态，立刻返回明确的 503。
+function requireMongo(ctx) {
+  if (mongoose.connection.readyState === 1) return true
+  logger.error(`订单接口不可用：MongoDB 未连接 (readyState=${mongoose.connection.readyState})`)
+  ctx.status = 503
+  ctx.body = {
+    code: 503,
+    message: '订单服务暂不可用，请稍后重试',
+    data: null,
+    timestamp: Date.now()
+  }
+  return false
+}
+
+// 订单 → 对外视图。不直接把 Mongo 文档吐给客户端：_id / __v 是存储细节，
+// transactionId 是支付渠道流水，客户端一概用不上。
+function orderView(order) {
+  if (!order) return null
+  return {
+    orderId: String(order._id),
+    productType: order.productType,
+    amount: order.amount,
+    status: order.status,
+    paidAt: order.paidAt || null,
+    createdAt: order.createdAt
+  }
+}
+
 // 支付成功后发放权益。deep_report 的权益即「存在一条 paid 订单」，由 analysis/deep 校验；
 // vip_month 需要写用户 VIP 等级与到期时间。
 async function grantEntitlement(order) {
@@ -83,6 +116,7 @@ async function grantEntitlement(order) {
  */
 router.post('/create', authRequired, async (ctx) => {
   try {
+    if (!requireMongo(ctx)) return
     const { productType } = ctx.request.body
     const userId = ctx.state.user.userId
 
@@ -118,12 +152,7 @@ router.post('/create', authRequired, async (ctx) => {
     ctx.body = {
       code: 200,
       message: 'success',
-      data: {
-        orderId: order._id,
-        productType: order.productType,
-        amount: order.amount,
-        status: order.status
-      },
+      data: orderView(order),
       timestamp: Date.now()
     }
   } catch (err) {
@@ -147,6 +176,17 @@ router.post('/callback', async (ctx) => {
     logger.error('收到支付回调但未配置 WXPAY_API_KEY，拒绝处理')
     ctx.status = 503
     ctx.body = ackFail('支付未配置')
+    return
+  }
+
+  // 库连不上时快速失败：返回 FAIL 让微信按重推机制稍后再送，
+  // 而不是靠 mongoose 缓冲干等 10s 才失败（微信侧可能已判超时）。
+  // 注意这里必须走 XML 应答，不能复用 requireMongo 的 JSON 信封。
+  if (mongoose.connection.readyState !== 1) {
+    logger.error('收到支付回调但 MongoDB 未连接，返回 FAIL 等待微信重推')
+    sentry.captureMessage('wxpay callback received while mongo down', 'error')
+    ctx.status = 503
+    ctx.body = ackFail('服务暂不可用')
     return
   }
 
@@ -222,9 +262,10 @@ router.post('/callback', async (ctx) => {
  */
 router.get('/list', authRequired, async (ctx) => {
   try {
+    if (!requireMongo(ctx)) return
     const userId = ctx.state.user.userId
     const orders = await Order.find({ userId }).sort({ createdAt: -1 }).limit(20)
-    ctx.body = { code: 200, message: 'success', data: orders, timestamp: Date.now() }
+    ctx.body = { code: 200, message: 'success', data: orders.map(orderView), timestamp: Date.now() }
   } catch (err) {
     logger.error('查询订单错误:', err)
     ctx.status = 500
@@ -238,6 +279,7 @@ router.get('/list', authRequired, async (ctx) => {
  */
 router.post('/:orderId/pay', authRequired, async (ctx) => {
   try {
+    if (!requireMongo(ctx)) return
     const { orderId } = ctx.params
 
     const order = await loadOwnedOrder(ctx, orderId, '无权操作此订单')
@@ -272,6 +314,7 @@ router.post('/:orderId/pay', authRequired, async (ctx) => {
  */
 router.post('/:orderId/confirm', authRequired, async (ctx) => {
   try {
+    if (!requireMongo(ctx)) return
     const { orderId } = ctx.params
 
     const order = await loadOwnedOrder(ctx, orderId, '无权操作此订单')
@@ -296,12 +339,13 @@ router.post('/:orderId/confirm', authRequired, async (ctx) => {
  */
 router.get('/:orderId', authRequired, async (ctx) => {
   try {
+    if (!requireMongo(ctx)) return
     const { orderId } = ctx.params
 
     const order = await loadOwnedOrder(ctx, orderId, '无权查看此订单')
     if (!order) return
 
-    ctx.body = { code: 200, message: 'success', data: order, timestamp: Date.now() }
+    ctx.body = { code: 200, message: 'success', data: orderView(order), timestamp: Date.now() }
   } catch (err) {
     logger.error('查询订单详情错误:', err)
     ctx.status = 500

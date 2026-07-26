@@ -80,6 +80,21 @@ describe('baziRecordStore - 无 Mongo 内存兜底', () => {
     expect(list[0].createdAt.getTime()).toBeGreaterThanOrEqual(list[1].createdAt.getTime())
   })
 
+  test('clear 清空本人记录并返回条数，不影响其他用户', async () => {
+    await store.save('u1', BIRTH, 'A')
+    await store.save('u1', { ...BIRTH, hour: 11 }, 'B')
+    await store.save('u2', BIRTH, 'C')
+
+    const deleted = await store.clear('u1')
+    expect(deleted).toBe(2)
+    expect(await store.list('u1')).toHaveLength(0)
+    expect(await store.list('u2')).toHaveLength(1)
+  })
+
+  test('clear 空历史返回 0，不抛错', async () => {
+    expect(await store.clear('never-existed')).toBe(0)
+  })
+
   test('返回的是副本，外部改动不会污染存储', async () => {
     await store.save('u1', BIRTH, 'A')
     const first = await store.list('u1')

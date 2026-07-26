@@ -168,3 +168,51 @@ describe('GET /api/v1/bazi/history', () => {
     expect(pillars(replay.body.data)).toBe(history.body.data[0].baziStr)
   })
 })
+
+describe('DELETE /api/v1/bazi/history', () => {
+  test('无 token → 401', async () => {
+    const ctx = await invoke('DELETE', '/history')
+    expect(ctx.status).toBe(401)
+  })
+
+  test('清空本人记录并返回条数', async () => {
+    await invoke('POST', '/paipan', { body: PAIPAN_BODY, auth: authFor('u1') })
+    await invoke('POST', '/paipan', {
+      body: { birthDate: '1985-03-15', birthTime: '14:00', gender: 'female' },
+      auth: authFor('u1')
+    })
+
+    const ctx = await invoke('DELETE', '/history', { auth: authFor('u1') })
+    expect(ctx.status).toBe(200)
+    expect(ctx.body.data.deleted).toBe(2)
+
+    const after = await invoke('GET', '/history', { auth: authFor('u1') })
+    expect(after.body.data).toHaveLength(0)
+  })
+
+  test('清除不影响其他用户的记录', async () => {
+    await invoke('POST', '/paipan', { body: PAIPAN_BODY, auth: authFor('u1') })
+    await invoke('POST', '/paipan', { body: PAIPAN_BODY, auth: authFor('u2') })
+
+    await invoke('DELETE', '/history', { auth: authFor('u1') })
+
+    const other = await invoke('GET', '/history', { auth: authFor('u2') })
+    expect(other.body.data).toHaveLength(1)
+  })
+
+  test('清除后再排同一个盘能重新落库（幂等键不残留）', async () => {
+    await invoke('POST', '/paipan', { body: PAIPAN_BODY, auth: authFor('u1') })
+    await invoke('DELETE', '/history', { auth: authFor('u1') })
+    expect((await invoke('GET', '/history', { auth: authFor('u1') })).body.data).toHaveLength(0)
+
+    const again = await invoke('POST', '/paipan', { body: PAIPAN_BODY, auth: authFor('u1') })
+    expect(again.body.data.persisted).toBe(true)
+    expect((await invoke('GET', '/history', { auth: authFor('u1') })).body.data).toHaveLength(1)
+  })
+
+  test('清空历史返回 0 条而非报错', async () => {
+    const ctx = await invoke('DELETE', '/history', { auth: authFor('u-empty') })
+    expect(ctx.status).toBe(200)
+    expect(ctx.body.data.deleted).toBe(0)
+  })
+})

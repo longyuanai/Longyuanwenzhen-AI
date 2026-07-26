@@ -89,18 +89,39 @@
 
 .history-info {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 12rpx;
   margin-bottom: 12rpx;
 }
 
+/* 日期占左侧，性别与来源标签靠右成组 */
 .history-date {
   font-size: 26rpx;
   color: #666;
+  margin-right: auto;
 }
 
 .history-gender {
   font-size: 26rpx;
   color: #999;
+}
+
+/* 仅存在于本机的记录（匿名时排的盘 / 离线兜底），登录同步后不再出现 */
+.history-local-tag {
+  font-size: 22rpx;
+  color: #ad6800;
+  background: #fff7e6;
+  border: 2rpx solid #ffd591;
+  border-radius: 6rpx;
+  padding: 0 10rpx;
+  line-height: 32rpx;
+}
+
+.syncing-tip {
+  font-size: 24rpx;
+  color: #999;
+  margin-left: auto;
+  margin-right: 20rpx;
 }
 
 .history-bazi {

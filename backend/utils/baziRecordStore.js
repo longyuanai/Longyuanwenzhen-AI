@@ -127,6 +127,32 @@ async function list(userId, limit = 20) {
     .map(cloneRecord)
 }
 
+/**
+ * 清空某用户的全部排盘记录。
+ *
+ * 小程序「清除历史」需要它：只清本地 storage 的话，下次 onShow 拉服务端
+ * 历史又全回来了，用户会以为清除没生效。
+ *
+ * @returns {Promise<number>} 删除条数；存储不可用时返回 0
+ */
+async function clear(userId) {
+  const uid = String(userId)
+
+  if (hasMongo()) {
+    try {
+      const res = await BaziRecord.deleteMany({ userId: uid })
+      return res.deletedCount || 0
+    } catch (err) {
+      logger.warn(`排盘历史清除失败(用户 ${uid}): ${err.message}`)
+      return 0
+    }
+  }
+
+  const n = (memory.get(uid) || []).length
+  memory.delete(uid)
+  return n
+}
+
 // Mongo 文档 → 对外视图（不直接吐 _id/__v）
 function toView(doc) {
   if (!doc) return null
@@ -149,4 +175,4 @@ function _reset() {
   memory.clear()
 }
 
-module.exports = { save, list, _reset, MEMORY_LIMIT }
+module.exports = { save, list, clear, _reset, MEMORY_LIMIT }

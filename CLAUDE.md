@@ -56,6 +56,7 @@ node backend/scripts/dev-seed-test-user.js
 | 用户 | `GET /api/v1/user/profile` | 鉴权 |
 | 排盘 | `POST /api/v1/bazi/paipan` | 免费(`authOptional`),服务端权威排盘;登录则落库 |
 | 排盘 | `GET /api/v1/bazi/history` | 鉴权,返回本人排盘记录(`?limit=` 1-100,默认 20) |
+| 排盘 | `DELETE /api/v1/bazi/history` | 鉴权,清空本人记录 |
 | 解读 | `POST /api/v1/analysis/basic` | 免费 |
 | 解读 | `POST /api/v1/analysis/deep` | 鉴权 + 付费(deep_report / VIP) |
 | 解读 | `POST /api/v1/analysis/four-school` | 鉴权 + 付费(four_school / VIP),四家投票法 |
@@ -81,13 +82,15 @@ node backend/scripts/dev-seed-test-user.js
 - **农历输入**:`birth.calendar === 'lunar'` 走 `normalizeBirthToSolar`,闰月传负月份
 - **RAG**:`utils/knowledgeRetriever.js` 的 `retrieve(mingju, { query })`,**四家投票时给各家传不同 query**,否则 refs 全相同
 
+- **订单接口强依赖 Mongo,且入口即判**:订单是财务记录,不做内存兜底(进程重启就没的「订单」比报错更危险)。但也不放任 mongoose 缓冲——连不上库时 `requireMongo()` 立刻返 503(实测 10.09s → 0.012s),回调侧返 XML `FAIL` 让微信按重推机制稍后再送。
+
 ## 付费档
 
 `deep_report` `four_school` `dayun_segment` `dayun_full` 四种付费产品 + `vip_month` 月卡通行证。服务端定价在 `backend/config/products.js`,**忽略客户端传入的 amount**。`vip_month` 在微信回调 `grantEntitlement()` 里写用户 VIP 等级 + 到期时间;`deep_report` `four_school` `dayun_segment` `dayun_full` 的权益判定走 `utils/entitlementRegistry.js`(有 Mongo 查 Mongo,无 Mongo 走 in-memory 兜底 → 演示永远 200/403,**不会 21 秒假死**);持有有效 VIP 也算已付费。
 
 ## 测试
 
-- jest,34 套件 / 303 用例 / ~9s 全绿(2026-07-25)
+- jest,34 套件 / 313 用例 / ~9s 全绿(2026-07-25)
 - 黄金基准:机主本人盘 2002-11-20 巳时男 + `bazi-skill-dist/cases/` 张学良 / 邵逸夫(均在 1900-2100 范围内)
 - 跑命令:`cd backend && npm test`
 - 测试目录:`utils/__tests__/`(20) + `routes/__tests__/`(8) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
