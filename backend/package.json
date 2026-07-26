@@ -8,6 +8,7 @@
     "dev": "nodemon app.js",
     "test": "jest",
     "gen:solar-terms": "node scripts/gen-solar-terms.js",
+    "preview:en": "node scripts/preview-en-prompt.js",
     "seed:test": "node scripts/dev-seed-test-user.js",
     "seed:friends": "node scripts/seed-friends.js",
     "seed:friends:10": "node scripts/seed-friends.js --count=10 --prefix=f",
