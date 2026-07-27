@@ -1,0 +1,38 @@
+# 构建上下文是仓库根目录（镜像要带 miniprogram/config.js），
+# 所以这里要把大件挡掉，否则每次 build 都把整个知识库塞进上下文。
+
+# 依赖与产物：镜像里由 npm ci 重装，拷进去只会拖慢构建且可能带入宿主机的平台差异
+node_modules
+**/node_modules
+backend/logs
+*.log
+
+# 版本控制与编辑器
+.git
+.gitignore
+.vscode
+.arts
+.codeartsdoer
+
+# 命理知识库：几十 MB 的古籍与索引，只有 LightRAG 需要，后端镜像用不上
+bazi-skill-dist
+
+# 文档与前端资源：不进后端镜像
+docs
+README.md
+CLAUDE.md
+CHANGELOG.md
+frontend
+
+# 小程序：只有 config.js 被 Dockerfile 单独 COPY 进去（preflight 要读）
+miniprogram/pages
+miniprogram/utils
+miniprogram/assets
+miniprogram/*.json
+miniprogram/app.js
+miniprogram/app.wxss
+
+# 环境文件绝不进镜像：靠 env_file / -e 注入，进镜像等于把密钥焊死在层里
+.env
+**/.env
+!backend/.env.example

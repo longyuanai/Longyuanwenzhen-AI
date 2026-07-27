@@ -1,0 +1,80 @@
+# docker-compose.yml - 一条命令起全套依赖
+#
+# 把 docs/friend-test-runbook.md 里手敲的三段 docker 命令固化下来。
+#
+# 用法：
+#   cp backend/.env.example backend/.env   # 填 WX_APPID / WX_SECRET / OPENAI_API_KEY / JWT_SECRET
+#   docker compose up -d
+#   docker compose exec backend npm run preflight   # 自检配置是否齐全
+#   curl http://localhost:8080/health
+#
+# 只起依赖、后端在本机跑（改代码有热重载，联调更顺手）：
+#   docker compose up -d mongo redis
+#   cd backend && npm run dev
+#
+# 收摊：
+#   docker compose down          # 停容器，数据卷保留
+#   docker compose down -v       # 连数据一起删
+#
+# LightRAG 不在这里：它的镜像与索引灌注流程独立且耗时（首次 5-10min），
+# 见 bazi-skill-dist/scripts/serve-lightrag.sh。没有它解读照常出，只是没古籍引证。
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: bazi-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # 后端要等 Mongo 真的能应答再起，否则订单接口会在启动窗口里返 503
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1})"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: bazi-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      # 上下文是仓库根目录：镜像里要带上 miniprogram/config.js 供 preflight 读
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: bazi-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - backend/.env
+    environment:
+      # 容器内用服务名而非 localhost —— .env 里那份是给本机直跑用的
+      MONGODB_URL: mongodb://mongo:27017/bazi
+      REDIS_URL: redis://redis:6379
+      PORT: 8080
+    volumes:
+      # 日志落到宿主机，容器重建不丢；npm run usage:report 也要读它算成本
+      - ./backend/logs:/app/backend/logs
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  mongo-data:
+  redis-data:

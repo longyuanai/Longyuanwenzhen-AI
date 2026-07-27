@@ -32,13 +32,13 @@ cd backend && npm install
 cp backend/.env.example backend/.env
 # 编辑 backend/.env:填 OPENAI_API_KEY / WX_APPID / WX_SECRET / LIGHTRAG_URL / JWT_SECRET
 
-# 起 MongoDB(任选一种)
-docker run -d --name bazi-mongo -p 27017:27017 mongo:7
-# 或:本地装 Mongo 7 监听 27017
+# 一条命令起全套(Mongo + Redis + 后端)
+docker compose up -d
+docker compose exec backend npm run preflight   # 配置自检,有阻断项退出码 1
 
-# 启动后端(8080)
-cd backend && npm start
-# 开发模式:npm run dev
+# 或:只用容器起依赖,后端本机跑(改代码热重载)
+docker compose up -d mongo redis
+cd backend && npm run dev
 
 # 跑测试(38 套件 / 402 用例 / 约 9s)
 cd backend && npm test
@@ -122,6 +122,7 @@ node backend/scripts/dev-seed-test-user.js
 - **✅ 解读接口只收 birth → 已修**:`/analysis/*` 收 `birth:{year,month,day,hour,minute,gender}`,后端自行排盘。客户端算的四柱/五行不是入参(服务端权威)。小程序侧用 `utils/bazi.js` 的 `buildBirthPayload(result)` 统一构造。
 - **`.env` 变量名**:以 `.env.example` 为准(`WX_SECRET` / `WXPAY_API_KEY` / `WXPAY_MCHID`)。`config/index.js` 兼容旧名 `WX_APPSECRET` / `WX_PAY_KEY`,新代码别用。`config/__tests__/env-wiring.test.js` 锁死这层接线。
 - **小程序配置集中在 `miniprogram/config.js`**:API 地址、客服微信号、版本号只写这一处,页面/工具层一律 require。`app.js` 启动跑 `checkConfig()` 告警占位值(localhost / 未替换的客服微信号)。文件末尾有开测与上线检查清单。
+- **上线/开测前先跑 `npm run preflight`**:一次性查密钥强度、CORS、微信 appid、支付密钥、小程序侧配置、以及 Mongo/Redis/LightRAG 连通性。`NODE_ENV=production` 下会把更多项升级为阻断。有阻断项退出码 1,可串进启动脚本。
 - **AI 成本可实测,不用估**:`utils/aiUsage.js` 记录每次调用的真实 token(取 API 的 usage 字段)+ 降级率,写结构化日志行 `[ai-usage] type=.. total_tokens=..`。`npm run usage:report -- --price-in=X --price-out=Y`(元/百万 token)直接出单次成本与毛利率表。埋点任何异常都吞掉——绝不能因为记账把解读请求带崩。
 - **英文链路已全线打通**:5 条解读路径各有 `*.en.js` 提示词与降级模板,路由按 `lang` 分发(`routes/analysis.js` 的 `BUILDERS` 表)。四家解读的英文标题用**方法论领衔、人名作出处**——徐乐吾等四位对英文读者没有认知度,音译过去卖点即失效。
 - **英文链路的术语表必须穷尽算法取值**:`utils/i18n/baziTerms.js` 的 STRENGTH(5 档,对齐 `wangShuai.js`)与 GEJU(13 种,对齐 `geju.js`)漏一个,该盘的英文正文就会混进中文。改这两个算法要同步补表,`utils/__tests__/promptBuilder.en.test.js` 直接对着取值清单校验。
