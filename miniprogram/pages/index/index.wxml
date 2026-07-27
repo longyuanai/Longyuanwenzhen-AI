@@ -25,9 +25,24 @@
       <text class="tip-title">欢迎使用智能八字排盘</text>
       <text class="tip-desc">登录后可保存排盘记录</text>
     </view>
-    <button class="btn-login" bindtap="getUserProfile" wx:if="{{canIUseGetUserProfile}}">
-      微信授权登录
+    <!-- 直接静默登录：wx.login 拿 code 换 openid，不需要用户点授权弹窗。
+         头像昵称是可选的锦上添花，不该挡在登录前面。 -->
+    <button class="btn-login" bindtap="login" disabled="{{isLoading}}">
+      {{isLoading ? '登录中…' : '微信一键登录'}}
     </button>
+
+    <!-- 头像昵称填写能力（2022-10-25 起 getUserProfile 只返回匿名数据，
+         官方替代方案是 chooseAvatar + type="nickname"）。
+         登录后可选补充，不填也不影响任何功能。 -->
+    <view class="profile-fill" wx:if="{{showProfileFill}}">
+      <view class="tip-desc">可选：补充头像昵称</view>
+      <button class="avatar-btn" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">
+        <image class="avatar-img" src="{{draftAvatar || '/assets/images/profile.png'}}" />
+      </button>
+      <input class="nickname-input" type="nickname" placeholder="点击填写昵称"
+             value="{{draftNick}}" bindblur="onNickInput" bindchange="onNickInput" />
+      <button class="btn-login" bindtap="saveProfile">保存</button>
+    </view>
   </view>
 
   <!-- 功能介绍 -->

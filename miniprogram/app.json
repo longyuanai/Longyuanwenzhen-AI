@@ -39,13 +39,5 @@
     "downloadFile": 10000
   },
   "debug": false,
-  "permission": {
-    "scope.userLocation": {
-      "desc": "用于获取出生地点信息"
-    }
-  },
-  "requiredPrivateInfos": [
-    "chooseLocation"
-  ],
   "sitemapLocation": "sitemap.json"
 }
