@@ -3,80 +3,82 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>AI 八字 · 五行体检</title>
+<title id="page-title">AI 八字 · 五行体检</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%E5%85%AB%3C/text%3E%3C/svg%3E" />
 <link rel="stylesheet" href="checkup.css" />
 </head>
 <body>
 <div class="wrap">
   <div class="title">
-    <h1>八字 · 五行体检</h1>
-    <p>传统命理文化 · 性格与五行结构参考</p>
+    <h1 data-i18n="title">八字 · 五行体检</h1>
+    <p data-i18n="subtitle">传统命理文化 · 性格与五行结构参考</p>
+    <a class="lang-switch" id="lang-switch" href="#">English</a>
   </div>
 
   <!-- ① 输入屏 -->
   <div id="screen-input">
     <div class="card">
-      <h2>填写出生信息</h2>
-      <label class="fld">性别</label>
+      <h2 data-i18n="formTitle">填写出生信息</h2>
+      <label class="fld" data-i18n="genderLabel">性别</label>
       <div class="seg" id="seg-gender">
-        <button type="button" data-v="male" class="on">男</button>
-        <button type="button" data-v="female">女</button>
+        <button type="button" data-v="male" class="on" data-i18n="male">男</button>
+        <button type="button" data-v="female" data-i18n="female">女</button>
       </div>
 
-      <label class="fld">历法</label>
+      <label class="fld" data-i18n="calLabel">历法</label>
       <div class="seg" id="seg-cal">
-        <button type="button" data-v="solar" class="on">阳历(公历)</button>
-        <button type="button" data-v="lunar">农历(阴历)</button>
+        <button type="button" data-v="solar" class="on" data-i18n="solar">阳历(公历)</button>
+        <button type="button" data-v="lunar" data-i18n="lunar">农历(阴历)</button>
       </div>
 
       <div class="row" style="margin-top:14px">
-        <div><label class="fld" style="margin-top:0">年</label><input id="in-year" type="number" inputmode="numeric" placeholder="1990" /></div>
-        <div><label class="fld" style="margin-top:0">月</label><input id="in-month" type="number" inputmode="numeric" placeholder="1" /></div>
-        <div><label class="fld" style="margin-top:0">日</label><input id="in-day" type="number" inputmode="numeric" placeholder="1" /></div>
+        <div><label class="fld" style="margin-top:0" data-i18n="year">年</label><input id="in-year" type="number" inputmode="numeric" placeholder="1990" /></div>
+        <div><label class="fld" style="margin-top:0" data-i18n="month">月</label><input id="in-month" type="number" inputmode="numeric" placeholder="1" /></div>
+        <div><label class="fld" style="margin-top:0" data-i18n="day">日</label><input id="in-day" type="number" inputmode="numeric" placeholder="1" /></div>
       </div>
 
       <div class="chk hidden" id="leap-wrap">
-        <input id="in-leap" type="checkbox" /><label for="in-leap">该农历月为闰月</label>
+        <input id="in-leap" type="checkbox" /><label for="in-leap" data-i18n="leap">该农历月为闰月</label>
       </div>
 
-      <label class="fld">时辰</label>
+      <label class="fld" data-i18n="hourLabel">时辰</label>
       <select id="in-hour"></select>
 
-      <button class="btn" id="btn-go">免费生成我的五行体检</button>
+      <button class="btn" id="btn-go" data-i18n="submit">免费生成我的五行体检</button>
       <div class="err hidden" id="err"></div>
     </div>
-    <div class="foot">结果即时生成，不保存你的任何信息</div>
+    <div class="foot" data-i18n="privacy">结果即时生成，不保存你的任何信息</div>
   </div>
 
   <!-- ② 报告屏 -->
   <div id="screen-report" class="hidden">
     <div class="oneliner">
-      <div class="tag">命格速览</div>
+      <div class="tag" data-i18n="glanceTag">命格速览</div>
       <div class="txt" id="r-oneliner"></div>
     </div>
 
     <div class="card">
-      <h2>四柱八字</h2>
+      <h2 data-i18n="pillarsTitle">四柱八字</h2>
       <div class="pillars" id="r-pillars"></div>
-      <div class="kv" style="text-align:center;margin-top:10px">日主：<b id="r-daymaster"></b></div>
+      <div class="kv" style="text-align:center;margin-top:10px"><span data-i18n="dayMasterLabel">日主：</span><b id="r-daymaster"></b></div>
     </div>
 
     <div class="card">
-      <h2>五行能量分布</h2>
+      <h2 data-i18n="wuxingTitle">五行能量分布</h2>
       <div id="r-wuxing"></div>
     </div>
 
     <div class="card">
-      <h2>身强弱</h2>
+      <h2 data-i18n="strengthTitle">身强弱</h2>
       <div class="stat"><div class="big" id="r-strength"></div><div class="sub" id="r-ratio"></div></div>
       <div class="badges" id="r-badges"></div>
     </div>
 
     <div class="card">
-      <h2>喜用 · 忌神 · 格局</h2>
-      <div class="kv">喜用五行（宜亲近的方向）</div>
+      <h2 data-i18n="yongshenTitle">喜用 · 忌神 · 格局</h2>
+      <div class="kv" data-i18n="xiLabel">喜用五行（宜亲近的方向）</div>
       <div class="tags" id="r-xi"></div>
-      <div class="kv" style="margin-top:12px">忌神五行（宜避开的方向）</div>
+      <div class="kv" style="margin-top:12px" data-i18n="jiLabel">忌神五行（宜避开的方向）</div>
       <div class="tags" id="r-ji"></div>
       <div class="kv" style="margin-top:12px" id="r-tiaohou"></div>
       <div class="kv" id="r-geju"></div>
@@ -84,24 +86,24 @@
 
     <!-- ③ 钩子 -->
     <div class="lock">
-      <h3>🔒 深度命局报告（即将上线）</h3>
+      <h3 data-i18n="lockTitle">🔒 深度命局报告（即将上线）</h3>
       <ul>
-        <li>为什么是这些喜用神？如何在生活中趋避</li>
-        <li>事业财运：适合的方向与求财方式</li>
-        <li>感情婚姻：正缘特征与大致应期</li>
-        <li>健康预警：体质弱点与调理建议</li>
-        <li>大运流年：未来 10 年走势起伏</li>
+        <li data-i18n="lock1">为什么是这些喜用神？如何在生活中趋避</li>
+        <li data-i18n="lock2">事业财运：适合的方向与求财方式</li>
+        <li data-i18n="lock3">感情婚姻：正缘特征与大致应期</li>
+        <li data-i18n="lock4">健康预警：体质弱点与调理建议</li>
+        <li data-i18n="lock5">大运流年：未来 10 年走势起伏</li>
       </ul>
-      <div class="price">完整报告 <b>¥19.9</b></div>
-      <button class="btn" id="btn-unlock" style="margin-top:12px">我想看完整报告</button>
+      <div class="price" data-i18n="price">完整报告 <b>¥19.9</b></div>
+      <button class="btn" id="btn-unlock" style="margin-top:12px" data-i18n="unlock">我想看完整报告</button>
     </div>
 
-    <button class="btn ghost" id="btn-back">重新测算</button>
+    <button class="btn ghost" id="btn-back" data-i18n="back">重新测算</button>
 
     <div class="contact" id="contact-box">
-      <div class="contact-tt">想要完整解读 / 校准时辰 / 答疑</div>
-      <div class="contact-wx">微信号：<b id="wx-id"></b></div>
-      <button class="btn" id="btn-copy-wx" style="margin-top:10px">复制微信号</button>
+      <div class="contact-tt" data-i18n="contactTitle">想要完整解读 / 校准时辰 / 答疑</div>
+      <div class="contact-wx"><span data-i18n="wxLabel">微信号：</span><b id="wx-id"></b></div>
+      <button class="btn" id="btn-copy-wx" style="margin-top:10px" data-i18n="copyWx">复制微信号</button>
     </div>
 
     <div class="foot" id="r-disclaimer"></div>

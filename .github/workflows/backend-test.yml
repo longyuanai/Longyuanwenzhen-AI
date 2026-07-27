@@ -44,6 +44,50 @@ jobs:
           RATE_LIMIT_DISABLED: '1'
         run: npm test
 
+      # preflight 自身也要被测：它是上线前的最后一道闸，
+      # 闸门本身坏了（比如挂死、误判）比没有闸门更危险。
+      # 这里不检查"某份配置是否合格"（CI 没有真实密钥），
+      # 而是验证脚本的判定逻辑：好配置放行、坏配置拦下、且都能正常退出。
+      - name: Preflight - 合格配置应放行
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-preflight-secret-long-enough-to-pass-32-chars
+          ALLOWED_ORIGINS: https://example.com
+          WX_APPID: wxci0000000000000
+          WX_SECRET: ci-wx-secret
+          OPENAI_API_KEY: sk-ci-placeholder
+        run: npm run preflight -- --skip-net
+
+      - name: Preflight - 弱密钥必须被拦下
+        working-directory: backend
+        env:
+          NODE_ENV: production
+          JWT_SECRET: too-short
+          ALLOWED_ORIGINS: https://example.com
+        run: |
+          if npm run preflight -- --skip-net; then
+            echo "::error::preflight 放行了过弱的 JWT_SECRET，闸门失效"
+            exit 1
+          fi
+          echo "已正确拦下弱密钥"
+
+      - name: Preflight - 生产环境的通配 CORS 必须被拦下
+        working-directory: backend
+        env:
+          NODE_ENV: production
+          JWT_SECRET: ci-preflight-secret-long-enough-to-pass-32-chars
+          ALLOWED_ORIGINS: '*'
+          WX_APPID: wxci0000000000000
+          WX_SECRET: ci-wx-secret
+          WXPAY_API_KEY: ci-pay-key
+        run: |
+          if npm run preflight -- --skip-net; then
+            echo "::error::preflight 放行了 prod 下的 ALLOWED_ORIGINS=*，闸门失效"
+            exit 1
+          fi
+          echo "已正确拦下通配 CORS"
+
       # 覆盖率可选,跑通再加 codecov
       # - name: Coverage
       #   working-directory: backend

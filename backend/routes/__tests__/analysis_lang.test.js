@@ -202,3 +202,57 @@ describe('付费档也支持 lang', () => {
     expect(p).toMatch(/1\. The overall tone of ages [\d-]+ \(/)
   })
 })
+
+describe('POST /checkup - lang 分发（免费档，英文市场的入口）', () => {
+  test('lang=en 返回 labels 块与英文 oneLiner/disclaimer', async () => {
+    const ctx = await invokePost('/checkup', { birth: BIRTH, lang: 'en' })
+    expect(ctx.status).toBe(200)
+    const d = ctx.body.data
+
+    expect(d.labels).toBeDefined()
+    expect(d.labels.dayMaster).toBe('Ren (Yang Water)')
+    expect(d.labels.strength).toBe('Strong Day Master')
+    expect(d.labels.geju).toContain('Jian Lu')
+    expect(d.labels.xiShen).toEqual(['Wood', 'Fire', 'Earth'])
+    expect(d.labels.tiaoHou.season).toBe('Winter')
+    expect(d.labels.pillars.day.pillar).toBe('Ren-Chen (Yang Water over Dragon)')
+    expect(d.labels.elements['木']).toBe('Wood')
+
+    expect(d.oneLiner).not.toMatch(/[一-龥]/)
+    expect(d.disclaimer).not.toMatch(/[一-龥]/)
+    expect(d.disclaimer).toContain('not fortune-telling')
+  })
+
+  test('缺省 lang 不返回 labels —— 小程序零影响', async () => {
+    const ctx = await invokePost('/checkup', { birth: BIRTH })
+    expect(ctx.status).toBe(200)
+    expect(ctx.body.data.labels).toBeUndefined()
+    // 原有字段一个不少，且仍是中文
+    expect(ctx.body.data.oneLiner).toMatch(/[一-龥]/)
+    expect(ctx.body.data.strength.label).toBe('身强')
+    expect(ctx.body.data.wuxingScore['木']).toBeDefined()
+  })
+
+  test('英文 labels 不改动原始字段（键仍是中文，前端可各取所需）', async () => {
+    const ctx = await invokePost('/checkup', { birth: BIRTH, lang: 'en' })
+    const d = ctx.body.data
+    expect(d.strength.label).toBe('身强')       // 原字段不动
+    expect(d.wuxingScore['水']).toBeDefined()   // 键仍是中文
+    expect(d.pillars.day.gan).toBe('壬')        // 干支本体保留汉字
+  })
+
+  test('英文点评覆盖各类命盘且不渗中文', async () => {
+    const charts = [
+      { year: 1985, month: 3, day: 15, hour: 14, gender: 'female' },
+      { year: 1970, month: 7, day: 7, hour: 6, gender: 'male' },
+      { year: 2010, month: 12, day: 31, hour: 23, gender: 'female' }
+    ]
+    for (const birth of charts) {
+      const ctx = await invokePost('/checkup', { birth, lang: 'en' })
+      expect(ctx.status).toBe(200)
+      expect(ctx.body.data.oneLiner).not.toMatch(/[一-龥]/)
+      expect(ctx.body.data.labels.strength).not.toMatch(/[一-龥]/)
+      expect(ctx.body.data.labels.geju).not.toMatch(/[一-龥]/)
+    }
+  })
+})

@@ -18,6 +18,8 @@ const {
   buildFourSchoolQueries
 } = require('../utils/fourSchoolPrompt')
 const { buildOneLiner } = require('../utils/checkupSummary')
+const { buildOneLinerEn, DISCLAIMER_EN } = require('../utils/checkupSummary.en')
+const T = require('../utils/i18n/baziTerms')
 const { analyzeDayunSegment, analyzeDayunFull, currentDayun } = require('../utils/dayun')
 const {
   buildDayunSegmentPrompt,
@@ -415,9 +417,54 @@ router.post('/four-school', authRequired, quotaGuard({ dim: 'analysis.four_schoo
  * POST /api/v1/analysis/checkup
  * body: { birth: {year,month,day,hour,minute,gender,calendar?:'solar'|'lunar',isLeap?} }
  */
+// 体检结果的英文标签块。
+//
+// 刻意「新增 labels 而非替换原字段」：wuxingScore 的键是中文五行字符，
+// pillars 里也全是干支汉字，改键名会直接打断小程序。所以原样保留，
+// 另给一份英文渲染，前端按语言取。
+//
+// 术语一律走 utils/i18n/baziTerms.js —— 那张表已被测试锁死必须穷尽算法取值，
+// 前端各自再维护一份必然漏（英文降级模板就因此漏过 偏强/羊刃格）。
+function buildCheckupLabelsEn(pp, m) {
+  const els = {}
+  Object.keys(m.wuxingScore).forEach((e) => { els[e] = T.element(e) })
+
+  const pillarLabels = {}
+  ;['year', 'month', 'day', 'hour'].forEach((k) => {
+    const p = pp[k + 'Pillar']
+    pillarLabels[k] = {
+      name: { year: 'Year', month: 'Month', day: 'Day', hour: 'Hour' }[k],
+      pillar: T.pillar(p.gan + p.zhi),
+      gan: T.gan(p.gan),
+      zhi: T.zhi(p.zhi),
+      ganShen: T.tenGod(pp.tenGods[k + 'Gan']),
+      zhiShen: T.tenGod(pp.tenGods[k + 'Zhi']),
+      cang: (pp.cangGan[k] || []).map(T.gan)
+    }
+  })
+
+  const th = m.yongShen.tiaoHou
+  return {
+    dayMaster: T.gan(m.dayMaster.gan),
+    dayElement: T.element(m.dayMaster.element),
+    strength: T.strength(m.strength.label),
+    geju: T.geju(m.geju.name),
+    xiShen: (m.yongShen.xiShen || []).map(T.element),
+    jiShen: (m.yongShen.jiShen || []).map(T.element),
+    elements: els,
+    pillars: pillarLabels,
+    tiaoHou: {
+      season: T.season(th.season),
+      need: (th.need || []).map(T.element),
+      urgent: !!th.urgent
+    }
+  }
+}
+
 router.post('/checkup', antiBrush({ dim: 'analysis.checkup', max: 120 }), async (ctx) => {
   try {
     let { birth } = ctx.request.body
+    const lang = resolveLang(ctx.request.body.lang)
     try {
       birth = normalizeBirthToSolar(birth)
     } catch (e) {
@@ -454,9 +501,11 @@ router.post('/checkup', antiBrush({ dim: 'analysis.checkup', max: 120 }), async 
         strength: m.strength,
         yongShen: m.yongShen,
         geju: m.geju,
-        oneLiner: buildOneLiner(pp, m),
+        oneLiner: lang === 'en' ? buildOneLinerEn(pp, m) : buildOneLiner(pp, m),
         currentDaYun,
-        disclaimer: m.disclaimer
+        disclaimer: lang === 'en' ? DISCLAIMER_EN : m.disclaimer,
+        // 仅 en 时附带；zh 走原字段，小程序不受影响
+        labels: lang === 'en' ? buildCheckupLabelsEn(pp, m) : undefined
       },
       timestamp: Date.now()
     }

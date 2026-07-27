@@ -40,7 +40,7 @@ docker compose exec backend npm run preflight   # 配置自检,有阻断项退�
 docker compose up -d mongo redis
 cd backend && npm run dev
 
-# 跑测试(38 套件 / 402 用例 / 约 9s)
+# 跑测试(38 套件 / 406 用例 / 约 9s)
 cd backend && npm test
 
 # 联调:自签 JWT + 插 user + paid four_school 订单(幂等)
@@ -64,7 +64,7 @@ node backend/scripts/dev-seed-test-user.js
 | 解读 | `POST /api/v1/analysis/four-school` | 鉴权 + 付费(four_school / VIP),四家投票法 |
 | 解读 | `POST /api/v1/analysis/dayun-segment` | 鉴权 + 付费(dayun_segment 19.9 / VIP),单段深度 |
 | 解读 | `POST /api/v1/analysis/dayun-full` | 鉴权 + 付费(dayun_full 49.9 / VIP),8 段全卷 |
-| 解读 | `POST /api/v1/analysis/checkup` | 免费五行体检,7ms,响应含 currentDaYun |
+| 解读 | `POST /api/v1/analysis/checkup` | 免费五行体检,7ms,含 currentDaYun;`lang=en` 时附 `labels` 英文术语块 |
 | 订单 | `POST /api/v1/order/create` | 鉴权,服务端定价 |
 | 订单 | `POST /api/v1/order/callback` | **微信回调,公开**,唯一合法 paid 入口 |
 | 订单 | `GET /api/v1/order/list` | 鉴权 |
@@ -92,7 +92,7 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 测试
 
-- jest,38 套件 / 402 用例 / ~9s 全绿(2026-07-25)
+- jest,38 套件 / 406 用例 / ~9s 全绿(2026-07-25)
 - 黄金基准:机主本人盘 2002-11-20 巳时男 + `bazi-skill-dist/cases/` 张学良 / 邵逸夫(均在 1900-2100 范围内)
 - 跑命令:`cd backend && npm test`
 - 测试目录:`utils/__tests__/`(24) + `routes/__tests__/`(9) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
@@ -124,7 +124,7 @@ node backend/scripts/dev-seed-test-user.js
 - **小程序配置集中在 `miniprogram/config.js`**:API 地址、客服微信号、版本号只写这一处,页面/工具层一律 require。`app.js` 启动跑 `checkConfig()` 告警占位值(localhost / 未替换的客服微信号)。文件末尾有开测与上线检查清单。
 - **上线/开测前先跑 `npm run preflight`**:一次性查密钥强度、CORS、微信 appid、支付密钥、小程序侧配置、以及 Mongo/Redis/LightRAG 连通性。`NODE_ENV=production` 下会把更多项升级为阻断。有阻断项退出码 1,可串进启动脚本。
 - **AI 成本可实测,不用估**:`utils/aiUsage.js` 记录每次调用的真实 token(取 API 的 usage 字段)+ 降级率,写结构化日志行 `[ai-usage] type=.. total_tokens=..`。`npm run usage:report -- --price-in=X --price-out=Y`(元/百万 token)直接出单次成本与毛利率表。埋点任何异常都吞掉——绝不能因为记账把解读请求带崩。
-- **英文链路已全线打通**:5 条解读路径各有 `*.en.js` 提示词与降级模板,路由按 `lang` 分发(`routes/analysis.js` 的 `BUILDERS` 表)。四家解读的英文标题用**方法论领衔、人名作出处**——徐乐吾等四位对英文读者没有认知度,音译过去卖点即失效。
+- **英文链路已全线打通**:5 条解读路径各有 `*.en.js` 提示词与降级模板,路由按 `lang` 分发(`routes/analysis.js` 的 `BUILDERS` 表);`/checkup` 额外返回 `labels` 英文术语块(**新增字段而非替换原字段**——`wuxingScore` 的键是中文五行字符,改键名会直接打断小程序)。`frontend/checkup.html` 是双语单文件(`?lang=en` 切换),术语一律取后端 `labels`,前端不自建术语表。四家解读的英文标题用**方法论领衔、人名作出处**——徐乐吾等四位对英文读者没有认知度,音译过去卖点即失效。
 - **英文链路的术语表必须穷尽算法取值**:`utils/i18n/baziTerms.js` 的 STRENGTH(5 档,对齐 `wangShuai.js`)与 GEJU(13 种,对齐 `geju.js`)漏一个,该盘的英文正文就会混进中文。改这两个算法要同步补表,`utils/__tests__/promptBuilder.en.test.js` 直接对着取值清单校验。
 - **微信 tabBar 图标只认 png/jpg**:`assets/images/*.svg` 是设计源,`*.png` 才是小程序实际引用的。改图标要同步产出 png。
 - **`tasks.md` 与代码栈脱节**:`.codeartsdoer/specs/bazi_app/` 写 React Native + FastAPI + PostgreSQL,实际是原生小程序 + Koa + MongoDB。**以代码为准,不要被 spec 带偏**。
