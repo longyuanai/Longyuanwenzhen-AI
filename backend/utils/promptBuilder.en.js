@@ -163,10 +163,76 @@ function buildDeepPromptEn(baziStr, dayunStr, mingju, knowledgeContext) {
   ].join('\n')
 }
 
+// 英文输出里的日主声明可能是这些形态：
+//   "Day Master is Ren (Yang Water)"  "the Ren Water Day Master"
+//   "Day Master: Yang Water"          "Your Day Master, Ren, ..."
+// 只在 "Day Master" 附近的窗口里找，否则会误伤正文里满地都是的五行词
+// （favorable elements、elemental weights 那些）。
+const GAN_PINYIN = ['Jia', 'Yi', 'Bing', 'Ding', 'Wu', 'Ji', 'Geng', 'Xin', 'Ren', 'Gui']
+const ELEMENT_EN = ['Wood', 'Fire', 'Earth', 'Metal', 'Water']
+
+// "Day Master" 前后各 40 字符的窗口
+const DM_WINDOW = new RegExp(
+  `(.{0,40}\\bDay Master\\b.{0,40})`,
+  'gi'
+)
+
+/**
+ * 英文版 AI 输出校验：从输出里提取日主声明，与 mingju.dayMaster 比对。
+ *
+ * 与中文版同样的哲学：找不到声明 → 放过（模型可能通篇没显式点名日主）；
+ * 找到且矛盾 → warn 但仍返原文，不影响用户看到内容。
+ *
+ * 中文版靠 "日主：甲木" 这种紧凑写法，正则很好写；英文句式松散得多，
+ * 所以改为「窗口内取词 + 集合比对」而不是逐字匹配。
+ *
+ * @param {object} mingju
+ * @param {string} content
+ * @param {object} [logger]
+ * @returns {{ ok:boolean, mismatch:string|null, content:string }}
+ */
+function validateAiOutputEn(mingju, content, logger) {
+  const log = logger || { warn: (msg) => console.warn(msg) }
+  const dm = mingju.dayMaster
+  const expectedPinyin = (T.GAN[dm.gan] || {}).pinyin // 如 'Ren'
+  const expectedElement = T.element(dm.element)       // 如 'Water'
+
+  const text = String(content || '')
+  const windows = text.match(DM_WINDOW) || []
+  if (windows.length === 0) return { ok: true, mismatch: null, content }
+
+  let mismatch = null
+  for (const w of windows) {
+    // 窗口里出现的干拼音与五行词
+    const gans = GAN_PINYIN.filter((g) => new RegExp(`\\b${g}\\b`).test(w))
+    const els = ELEMENT_EN.filter((e) => new RegExp(`\\b${e}\\b`, 'i').test(w))
+
+    // 出现了别的天干 → 明确矛盾
+    const wrongGan = gans.find((g) => g !== expectedPinyin)
+    if (wrongGan) { mismatch = wrongGan; break }
+
+    // 没提天干但提了五行，且全都不是日主五行 → 矛盾
+    // （只提到一个且不对才算，提到多个可能是在讲喜忌而非日主）
+    if (gans.length === 0 && els.length === 1 && els[0].toLowerCase() !== expectedElement.toLowerCase()) {
+      mismatch = els[0]
+      break
+    }
+  }
+
+  if (mismatch) {
+    log.warn(
+      `[AI check] Day Master declared as "${mismatch}" contradicts the computed `
+      + `"${expectedPinyin} (${expectedElement})"; system conclusion stands`
+    )
+  }
+  return { ok: mismatch === null, mismatch, content }
+}
+
 module.exports = {
   formatMingliFactsEn,
   formatKnowledgeContextEn,
   buildBasicPromptEn,
   buildDeepPromptEn,
+  validateAiOutputEn,
   COMMON_RULES_EN
 }

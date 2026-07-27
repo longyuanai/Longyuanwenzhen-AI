@@ -30,7 +30,11 @@ const {
   buildDayunSegmentFallback,
   buildDayunFullFallback
 } = require('../utils/localFallback')
-const { buildBasicPromptEn, buildDeepPromptEn } = require('../utils/promptBuilder.en')
+const {
+  buildBasicPromptEn,
+  buildDeepPromptEn,
+  validateAiOutputEn
+} = require('../utils/promptBuilder.en')
 const { buildFourSchoolPromptEn } = require('../utils/fourSchoolPrompt.en')
 const {
   buildDayunSegmentPromptEn,
@@ -43,6 +47,7 @@ const {
   buildDayunSegmentFallbackEn,
   buildDayunFullFallbackEn
 } = require('../utils/localFallback.en')
+const aiUsage = require('../utils/aiUsage')
 const reg = require('../utils/entitlementRegistry')
 const { Lunar } = require('lunar-javascript')
 
@@ -186,11 +191,14 @@ async function generateAnalysis(type, prompt, computed, lang = DEFAULT_LANG) {
       + 'Write in clear, natural English.'
     : '你是一位专业的八字命理师，精通传统命理学。'
 
+  const model = config.ai.openai.model
+  const startedAt = Date.now()
+
   try {
     const response = await axios.post(
       `${config.ai.openai.baseUrl}/chat/completions`,
       {
-        model: config.ai.openai.model,
+        model,
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: prompt }
@@ -207,11 +215,17 @@ async function generateAnalysis(type, prompt, computed, lang = DEFAULT_LANG) {
       }
     )
     const raw = response.data.choices[0].message.content
-    // 日主一致性校验目前只覆盖中文输出（正则匹配「日主：甲木」这类声明）；
-    // 英文输出的等价校验待补，先不误报。
-    if (lang === 'zh') validateAiOutput(computed.mingju, raw, logger)
+    // 记录真实 token 消耗，供 scripts/ai-usage-report.js 算单位成本
+    aiUsage.record({
+      type, lang, model, usage: response.data.usage, ms: Date.now() - startedAt
+    })
+    // 日主一致性校验：两种语言各有实现，句式差异大，不能共用一套正则
+    if (lang === 'en') validateAiOutputEn(computed.mingju, raw, logger)
+    else validateAiOutput(computed.mingju, raw, logger)
     return raw
   } catch (err) {
+    // 降级也记一笔：降级率是判断 AI 网关是否稳定的关键指标
+    aiUsage.record({ type, lang, model, ms: Date.now() - startedAt, fallback: true })
     logger.warn(`AI生成失败(${type}/${lang}), 降级到本地模板:`, err.message)
     const build = (BUILDERS[lang] || BUILDERS[DEFAULT_LANG]).fallback[type]
     if (build) return build(computed)

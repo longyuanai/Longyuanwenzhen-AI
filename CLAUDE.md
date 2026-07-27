@@ -40,7 +40,7 @@ docker run -d --name bazi-mongo -p 27017:27017 mongo:7
 cd backend && npm start
 # 开发模式:npm run dev
 
-# 跑测试(37 套件 / 384 用例 / 约 12s)
+# 跑测试(38 套件 / 402 用例 / 约 9s)
 cd backend && npm test
 
 # 联调:自签 JWT + 插 user + paid four_school 订单(幂等)
@@ -92,10 +92,10 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 测试
 
-- jest,37 套件 / 384 用例 / ~12s 全绿(2026-07-25)
+- jest,38 套件 / 402 用例 / ~9s 全绿(2026-07-25)
 - 黄金基准:机主本人盘 2002-11-20 巳时男 + `bazi-skill-dist/cases/` 张学良 / 邵逸夫(均在 1900-2100 范围内)
 - 跑命令:`cd backend && npm test`
-- 测试目录:`utils/__tests__/`(22) + `routes/__tests__/`(9) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
+- 测试目录:`utils/__tests__/`(24) + `routes/__tests__/`(9) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
 - 端到端 RAG 测试 mock HTTP,**不依赖 LightRAG 实际运行**
 
 ## 联调锚点(2026-07-24 实战)
@@ -122,6 +122,7 @@ node backend/scripts/dev-seed-test-user.js
 - **✅ 解读接口只收 birth → 已修**:`/analysis/*` 收 `birth:{year,month,day,hour,minute,gender}`,后端自行排盘。客户端算的四柱/五行不是入参(服务端权威)。小程序侧用 `utils/bazi.js` 的 `buildBirthPayload(result)` 统一构造。
 - **`.env` 变量名**:以 `.env.example` 为准(`WX_SECRET` / `WXPAY_API_KEY` / `WXPAY_MCHID`)。`config/index.js` 兼容旧名 `WX_APPSECRET` / `WX_PAY_KEY`,新代码别用。`config/__tests__/env-wiring.test.js` 锁死这层接线。
 - **小程序配置集中在 `miniprogram/config.js`**:API 地址、客服微信号、版本号只写这一处,页面/工具层一律 require。`app.js` 启动跑 `checkConfig()` 告警占位值(localhost / 未替换的客服微信号)。文件末尾有开测与上线检查清单。
+- **AI 成本可实测,不用估**:`utils/aiUsage.js` 记录每次调用的真实 token(取 API 的 usage 字段)+ 降级率,写结构化日志行 `[ai-usage] type=.. total_tokens=..`。`npm run usage:report -- --price-in=X --price-out=Y`(元/百万 token)直接出单次成本与毛利率表。埋点任何异常都吞掉——绝不能因为记账把解读请求带崩。
 - **英文链路已全线打通**:5 条解读路径各有 `*.en.js` 提示词与降级模板,路由按 `lang` 分发(`routes/analysis.js` 的 `BUILDERS` 表)。四家解读的英文标题用**方法论领衔、人名作出处**——徐乐吾等四位对英文读者没有认知度,音译过去卖点即失效。
 - **英文链路的术语表必须穷尽算法取值**:`utils/i18n/baziTerms.js` 的 STRENGTH(5 档,对齐 `wangShuai.js`)与 GEJU(13 种,对齐 `geju.js`)漏一个,该盘的英文正文就会混进中文。改这两个算法要同步补表,`utils/__tests__/promptBuilder.en.test.js` 直接对着取值清单校验。
 - **微信 tabBar 图标只认 png/jpg**:`assets/images/*.svg` 是设计源,`*.png` 才是小程序实际引用的。改图标要同步产出 png。

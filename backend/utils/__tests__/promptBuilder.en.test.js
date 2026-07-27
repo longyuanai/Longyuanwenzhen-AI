@@ -208,3 +208,59 @@ describe('英文提示词 - 多样命盘不炸', () => {
     })
   })
 })
+
+describe('validateAiOutputEn - 英文输出的日主一致性校验', () => {
+  const { validateAiOutputEn } = require('../promptBuilder.en')
+  const { mingju } = chartOf(2002, 11, 20, 10, 'male') // 壬水 → Ren (Water)
+  const silent = { warn: () => {} }
+
+  test('声明正确 → 通过', () => {
+    const r = validateAiOutputEn(mingju, 'Your Day Master is Ren (Yang Water), which...', silent)
+    expect(r.ok).toBe(true)
+    expect(r.mismatch).toBeNull()
+  })
+
+  test('只提五行且正确 → 通过', () => {
+    expect(validateAiOutputEn(mingju, 'The Day Master here is Water.', silent).ok).toBe(true)
+  })
+
+  test('天干说错 → 判不一致并告警', () => {
+    const warns = []
+    const r = validateAiOutputEn(mingju, 'Your Day Master is Bing (Yang Fire).', {
+      warn: (m) => warns.push(m)
+    })
+    expect(r.ok).toBe(false)
+    expect(r.mismatch).toBe('Bing')
+    expect(warns[0]).toContain('Ren')
+  })
+
+  test('五行说错 → 判不一致', () => {
+    const r = validateAiOutputEn(mingju, 'The Day Master is Fire in this chart.', silent)
+    expect(r.ok).toBe(false)
+  })
+
+  test('通篇未点名日主 → 放过（与中文版同哲学）', () => {
+    const r = validateAiOutputEn(mingju, 'Favorable elements are Wood, Fire and Earth.', silent)
+    expect(r.ok).toBe(true)
+  })
+
+  test('日主附近在讲喜忌，不误报', () => {
+    // 这是最容易误伤的场景：正文里五行词满地都是
+    const r = validateAiOutputEn(
+      mingju,
+      'The Day Master benefits from Wood, Fire and Earth here, and is drained by Metal.',
+      silent
+    )
+    expect(r.ok).toBe(true)
+  })
+
+  test('不一致时仍原样返回内容，不影响用户看到解读', () => {
+    const text = 'Your Day Master is Bing (Yang Fire).'
+    expect(validateAiOutputEn(mingju, text, silent).content).toBe(text)
+  })
+
+  test('空内容不抛错', () => {
+    expect(() => validateAiOutputEn(mingju, '', silent)).not.toThrow()
+    expect(() => validateAiOutputEn(mingju, null, silent)).not.toThrow()
+  })
+})
