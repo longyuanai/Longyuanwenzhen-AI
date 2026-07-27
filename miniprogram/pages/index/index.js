@@ -8,12 +8,27 @@ Page({
     isLoading: false,
     // 头像昵称填写：登录成功后才展示，且是可选项
     showProfileFill: false,
+    // 头像昵称能力需基础库 2.21.2+；旧版微信上按钮点了没反应，
+    // 与其给个假入口，不如直接不渲染
+    canFillProfile: false,
     draftAvatar: '',
     draftNick: ''
   },
 
   onLoad() {
+    this.setData({ canFillProfile: this.checkProfileFillSupport() })
     this.checkLoginStatus()
+  },
+
+  // 运行时能力检测：project.config.json 的 libVersion 只影响开发者工具，
+  // 真机上跑的是用户自己微信的基础库版本，必须运行时判断。
+  checkProfileFillSupport() {
+    try {
+      return wx.canIUse('button.open-type.chooseAvatar')
+        && wx.canIUse('input.type.nickname')
+    } catch (err) {
+      return false
+    }
   },
 
   onShow() {
@@ -101,7 +116,8 @@ Page({
         hasUserInfo: true,
         isLoading: false,
         // 登录成功后再邀请补充头像昵称——纯可选，不填也能用全部功能
-        showProfileFill: !result.userInfo || !result.userInfo.avatarUrl
+        showProfileFill: this.data.canFillProfile
+          && (!result.userInfo || !result.userInfo.avatarUrl)
       })
 
       wx.showToast({

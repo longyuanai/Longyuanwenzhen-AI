@@ -34,7 +34,7 @@
     <!-- 头像昵称填写能力（2022-10-25 起 getUserProfile 只返回匿名数据，
          官方替代方案是 chooseAvatar + type="nickname"）。
          登录后可选补充，不填也不影响任何功能。 -->
-    <view class="profile-fill" wx:if="{{showProfileFill}}">
+    <view class="profile-fill" wx:if="{{showProfileFill && canFillProfile}}">
       <view class="tip-desc">可选：补充头像昵称</view>
       <button class="avatar-btn" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">
         <image class="avatar-img" src="{{draftAvatar || '/assets/images/profile.png'}}" />

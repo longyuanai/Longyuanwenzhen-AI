@@ -188,6 +188,39 @@ function checkMiniprogram() {
   } catch (err) {
     add('WARN', '小程序配置', `读取失败：${err.message}`)
   }
+
+  // project.config.json：appid 是「什么都做不了」级别的阻断项
+  try {
+    const fs = require('fs')
+    const path = require('path')
+    const pc = JSON.parse(fs.readFileSync(
+      path.join(__dirname, '..', '..', 'miniprogram', 'project.config.json'), 'utf-8'))
+
+    if (!pc.appid || pc.appid === 'touristappid') {
+      // 分环境：本地开发用游客模式完全没问题（CI 里也是这个值），
+      // 但真机预览/上传必须换真实 AppID —— 故 prod 才升级为阻断。
+      add(isProd ? 'ERROR' : 'WARN', '小程序 appid',
+        '仍是 touristappid（游客模式）→ 无法真机预览、无法上传；本地开发不受影响',
+        '换成微信公众平台的真实 AppID；测试号见 mp.weixin.qq.com/debug/cgi-bin/sandboxinfo')
+    } else {
+      add('INFO', '小程序 appid', pc.appid.slice(0, 6) + '***')
+    }
+
+    // 头像昵称填写能力需 2.21.2+；代码里已做 canIUse 运行时兜底，
+    // 但开发者工具的 libVersion 太低会让你在工具里就复现不出来
+    const lib = String(pc.libVersion || '')
+    const [a, b, c] = lib.split('.').map(Number)
+    const tooOld = !(a > 2 || (a === 2 && (b > 21 || (b === 21 && (c || 0) >= 2))))
+    if (lib && tooOld) {
+      add('WARN', '小程序基础库', `libVersion=${lib} < 2.21.2 → 开发者工具里看不到头像昵称填写入口`,
+        '改 miniprogram/project.config.json 的 libVersion')
+    }
+  } catch (err) {
+    add('WARN', '小程序 project.config', `读取失败：${err.message}`)
+  }
+
+  // 这两项只能人工去后台配，机器查不了，但必须提醒到
+  add('INFO', '需人工配置', '公众平台：request 合法域名（必须 https）+ 用户隐私保护指引')
 }
 
 // ── 输出 ──────────────────────────────────────────────────────────

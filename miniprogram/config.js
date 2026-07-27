@@ -73,13 +73,30 @@ module.exports = {
 
 // ── 上线 / 开测前检查清单 ──────────────────────────────────────────
 //
-// 熟人内测（微信测试号）：
+// 代码侧（改完跑 `cd backend && npm run preflight` 复核）：
 //   1. API_HOST 改成开发机内网 IP（熟人手机与电脑同 WiFi），或 frp/ngrok 公网地址
 //   2. CONTACT_WECHAT 改成你自己的微信号
-//   3. 后端 .env 填 WX_APPID / WX_SECRET（测试号的）+ OPENAI_API_KEY + JWT_SECRET
-//   4. 测试号后台配白名单（上限 100 个微信号）
+//   3. project.config.json 的 appid 从 "touristappid" 换成真实 AppID
+//      —— 游客模式无法真机预览、无法上传，这一条不改什么都做不了
+//   4. 后端 .env 填 WX_APPID / WX_SECRET（测试号的）+ OPENAI_API_KEY + JWT_SECRET
 //
-// 正式上线追加：
-//   5. API_HOST 改 https 真实域名，并在公众平台配置合法 request 域名
-//   6. 后端 NODE_ENV=production、JWT_SECRET 换强密钥、ALLOWED_ORIGINS 填域名
-//   7. 接微信支付（需商户号），把 order/:orderId/pay 的占位 paySign 换成真实下单
+// 微信公众平台后台（代码改不了，必须人工去配）：
+//   5. 服务器域名 → request 合法域名填你的后端域名。**必须 https**，
+//      且 project.config.json 的 urlCheck 为 true 时真机会强制校验
+//   6. 用户隐私保护指引 → 2023-09 起强制。本小程序涉及 wx.login（openid）、
+//      头像昵称、本地缓存排盘记录，属于必须配置的范围
+//   7. 测试号白名单（上限 100 个微信号）；正式号则走类目申请
+//
+// 已知风险（非代码问题）：
+//   8. 命理属敏感类目，审核不确定性高。正式提审前先到公众平台确认
+//      「服务类目」列表里有无可容纳的类目，并读最新版运营规范中关于
+//      迷信类内容的条款 —— 这一步比任何代码工作都更决定项目走向
+//
+// 正式收费追加：
+//   9. 后端 NODE_ENV=production、JWT_SECRET 换强密钥、ALLOWED_ORIGINS 填域名
+//  10. 接微信支付（需商户号 + 企业/个体工商户主体），
+//      把 order/:orderId/pay 的占位 paySign 换成真实统一下单
+//
+// 基础库版本：project.config.json 的 libVersion 只影响开发者工具，
+// 真机跑的是用户自己微信的基础库。头像昵称填写能力需 2.21.2+，
+// pages/index/index.js 已做 wx.canIUse 运行时检测，旧版不渲染该入口。
