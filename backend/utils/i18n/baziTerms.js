@@ -157,8 +157,15 @@ function pillars(baziStr) {
   return String(baziStr).trim().split(/\s+/).map(pillar).join(' | ')
 }
 
+// 年龄区间 "7-16岁" → "7-16"
+// dayun.js 的 ageRange 带「岁」字，直接拼进英文正文会漏中文进去。
+// 英文侧由上下文的 "ages" 标明单位，不需要后缀。
+function ageRange(s) {
+  return String(s == null ? '' : s).replace(/岁/g, '').trim()
+}
+
 module.exports = {
   ELEMENT, GAN, ZHI, TEN_GOD, STRENGTH, SEASON, GEJU,
-  element, elements, gan, zhi, pillar, pillars,
+  element, elements, gan, zhi, pillar, pillars, ageRange,
   strength, season, tenGod, geju
 }

@@ -30,10 +30,68 @@ const {
   buildDayunSegmentFallback,
   buildDayunFullFallback
 } = require('../utils/localFallback')
+const { buildBasicPromptEn, buildDeepPromptEn } = require('../utils/promptBuilder.en')
+const { buildFourSchoolPromptEn } = require('../utils/fourSchoolPrompt.en')
+const {
+  buildDayunSegmentPromptEn,
+  buildDayunFullPromptEn
+} = require('../utils/dayunPrompt.en')
+const {
+  buildBasicFallbackEn,
+  buildDeepFallbackEn,
+  buildFourSchoolFallbackEn,
+  buildDayunSegmentFallbackEn,
+  buildDayunFullFallbackEn
+} = require('../utils/localFallback.en')
 const reg = require('../utils/entitlementRegistry')
 const { Lunar } = require('lunar-javascript')
 
 const AI_HTTP_TIMEOUT_MS = 5000
+
+// 输出语言。只认 'zh' / 'en'，其余一律回落中文 —— 不认识的 lang 值
+// 应该给出可用内容，而不是报错或吐出半英半中。
+const SUPPORTED_LANGS = ['zh', 'en']
+const DEFAULT_LANG = 'zh'
+
+function resolveLang(raw) {
+  const v = String(raw || '').trim().toLowerCase()
+  if (SUPPORTED_LANGS.includes(v)) return v
+  // 容忍 'en-US' / 'zh-CN' 这类带地区码的写法
+  const base = v.split('-')[0]
+  return SUPPORTED_LANGS.includes(base) ? base : DEFAULT_LANG
+}
+
+// 语言 → 提示词与降级模板构造器。集中在一处，新增语言只改这张表。
+const BUILDERS = {
+  zh: {
+    basic: buildBasicPrompt,
+    deep: buildDeepPrompt,
+    fourSchool: buildFourSchoolPrompt,
+    dayunSegment: buildDayunSegmentPrompt,
+    dayunFull: buildDayunFullPrompt,
+    fallback: {
+      basic: buildBasicFallback,
+      deep: buildDeepFallback,
+      'four-school': buildFourSchoolFallback,
+      'dayun-segment': buildDayunSegmentFallback,
+      'dayun-full': buildDayunFullFallback
+    }
+  },
+  en: {
+    basic: buildBasicPromptEn,
+    deep: buildDeepPromptEn,
+    fourSchool: buildFourSchoolPromptEn,
+    dayunSegment: buildDayunSegmentPromptEn,
+    dayunFull: buildDayunFullPromptEn,
+    fallback: {
+      basic: buildBasicFallbackEn,
+      deep: buildDeepFallbackEn,
+      'four-school': buildFourSchoolFallbackEn,
+      'dayun-segment': buildDayunSegmentFallbackEn,
+      'dayun-full': buildDayunFullFallbackEn
+    }
+  }
+}
 
 const router = new Router()
 
@@ -120,15 +178,21 @@ function computeFromBirth(birth) {
  * @param {string} type     'basic' | 'deep' | 'four-school' | 'dayun-segment' | 'dayun-full'
  * @param {string} prompt   提示词
  * @param {object} computed { baziStr, dayunStr, mingju, [seg|fullList] } 供降级模板使用
+ * @param {string} [lang]   'zh' | 'en'，决定 system prompt 与降级模板语言
  */
-async function generateAnalysis(type, prompt, computed) {
+async function generateAnalysis(type, prompt, computed, lang = DEFAULT_LANG) {
+  const system = lang === 'en'
+    ? 'You are a professional BaZi (Four Pillars of Destiny) consultant. '
+      + 'Write in clear, natural English.'
+    : '你是一位专业的八字命理师，精通传统命理学。'
+
   try {
     const response = await axios.post(
       `${config.ai.openai.baseUrl}/chat/completions`,
       {
         model: config.ai.openai.model,
         messages: [
-          { role: 'system', content: '你是一位专业的八字命理师，精通传统命理学。' },
+          { role: 'system', content: system },
           { role: 'user', content: prompt }
         ],
         temperature: 0.7,
@@ -143,16 +207,17 @@ async function generateAnalysis(type, prompt, computed) {
       }
     )
     const raw = response.data.choices[0].message.content
-    validateAiOutput(computed.mingju, raw, logger)
+    // 日主一致性校验目前只覆盖中文输出（正则匹配「日主：甲木」这类声明）；
+    // 英文输出的等价校验待补，先不误报。
+    if (lang === 'zh') validateAiOutput(computed.mingju, raw, logger)
     return raw
   } catch (err) {
-    logger.warn(`AI生成失败(${type}), 降级到本地模板:`, err.message)
-    if (type === 'basic') return buildBasicFallback(computed)
-    if (type === 'deep') return buildDeepFallback(computed)
-    if (type === 'four-school') return buildFourSchoolFallback(computed)
-    if (type === 'dayun-segment') return buildDayunSegmentFallback(computed)
-    if (type === 'dayun-full') return buildDayunFullFallback(computed)
-    return '命理解读生成中，请稍后再试。'
+    logger.warn(`AI生成失败(${type}/${lang}), 降级到本地模板:`, err.message)
+    const build = (BUILDERS[lang] || BUILDERS[DEFAULT_LANG]).fallback[type]
+    if (build) return build(computed)
+    return lang === 'en'
+      ? 'The reading is being generated. Please try again shortly.'
+      : '命理解读生成中，请稍后再试。'
   }
 }
 
@@ -169,6 +234,7 @@ function badRequest(ctx, message) {
 router.post('/basic', antiBrush({ dim: 'analysis.basic', max: 60 }), async (ctx) => {
   try {
     const { baziId, birth } = ctx.request.body
+    const lang = resolveLang(ctx.request.body.lang)
     let computed
     try {
       computed = computeFromBirth(birth)
@@ -177,9 +243,9 @@ router.post('/basic', antiBrush({ dim: 'analysis.basic', max: 60 }), async (ctx)
       throw e
     }
 
-    const prompt = buildBasicPrompt(computed.baziStr, computed.mingju)
-    const content = await generateAnalysis('basic', prompt, computed)
-    logger.info(`生成基础解读: ${baziId}`)
+    const prompt = BUILDERS[lang].basic(computed.baziStr, computed.mingju)
+    const content = await generateAnalysis('basic', prompt, computed, lang)
+    logger.info(`生成基础解读: ${baziId} (${lang})`)
 
     ctx.body = {
       code: 200,
@@ -204,6 +270,7 @@ router.post('/deep', authRequired, quotaGuard({ dim: 'analysis.deep', max: 5 }),
   try {
     const { baziId, birth } = ctx.request.body
     const userId = ctx.state.user.userId
+    const lang = resolveLang(ctx.request.body.lang)
 
     // 付费校验：未付费禁止生成深度报告（spec 5.4.1 禁止项）
     const entitled = await hasDeepEntitlement(userId)
@@ -226,9 +293,9 @@ router.post('/deep', authRequired, quotaGuard({ dim: 'analysis.deep', max: 5 }),
       throw e
     }
 
-    const prompt = buildDeepPrompt(computed.baziStr, computed.dayunStr, computed.mingju)
-    const content = await generateAnalysis('deep', prompt, computed)
-    logger.info(`生成深度报告: ${baziId}, 用户: ${userId}`)
+    const prompt = BUILDERS[lang].deep(computed.baziStr, computed.dayunStr, computed.mingju)
+    const content = await generateAnalysis('deep', prompt, computed, lang)
+    logger.info(`生成深度报告: ${baziId}, 用户: ${userId} (${lang})`)
 
     ctx.body = {
       code: 200,
@@ -256,6 +323,7 @@ router.post('/four-school', authRequired, quotaGuard({ dim: 'analysis.four_schoo
   try {
     const { baziId, birth } = ctx.request.body
     const userId = ctx.state.user.userId
+    const lang = resolveLang(ctx.request.body.lang)
 
     const entitled = await hasFourSchoolEntitlement(userId)
     if (!entitled) {
@@ -288,13 +356,13 @@ router.post('/four-school', authRequired, quotaGuard({ dim: 'analysis.four_schoo
     ])
     const knowledgeBySchool = { xu: xuRefs, liang: liangRefs, yuan: yuanRefs, wei: weiRefs }
 
-    const prompt = buildFourSchoolPrompt(
+    const prompt = BUILDERS[lang].fourSchool(
       computed.baziStr,
       computed.dayunStr,
       computed.mingju,
       knowledgeBySchool
     )
-    const content = await generateAnalysis('four-school', prompt, computed)
+    const content = await generateAnalysis('four-school', prompt, computed, lang)
 
     // 暴露各家的古籍命中数,前端可展示「徐乐吾派(3 处引证)」
     const sources = {
@@ -395,6 +463,7 @@ router.post('/dayun-segment', authRequired, quotaGuard({ dim: 'analysis.dayun_se
   try {
     const { baziId, birth, segmentIndex } = ctx.request.body
     const userId = ctx.state.user.userId
+    const lang = resolveLang(ctx.request.body.lang)
 
     if (!Number.isInteger(segmentIndex) || segmentIndex < 0 || segmentIndex > 7) {
       return badRequest(ctx, 'segmentIndex 须为 0-7 的整数')
@@ -426,7 +495,7 @@ router.post('/dayun-segment', authRequired, quotaGuard({ dim: 'analysis.dayun_se
     const refs = await retrieve(computed.mingju, { query: `大运 ${seg.ganZhi} ${seg.leanText}` })
     const knowledgeContext = formatKnowledgeContext(refs)
 
-    const prompt = buildDayunSegmentPrompt(
+    const prompt = BUILDERS[lang].dayunSegment(
       computed.baziStr,
       computed.mingju,
       seg,
@@ -435,7 +504,7 @@ router.post('/dayun-segment', authRequired, quotaGuard({ dim: 'analysis.dayun_se
     const content = await generateAnalysis('dayun-segment', prompt, {
       ...computed,
       seg
-    })
+    }, lang)
 
     logger.info(`生成大运单段解读: ${baziId}, 段 ${segmentIndex}, 用户: ${userId}, refs ${refs.length}`)
 
@@ -470,6 +539,7 @@ router.post('/dayun-full', authRequired, quotaGuard({ dim: 'analysis.dayun_full'
   try {
     const { baziId, birth } = ctx.request.body
     const userId = ctx.state.user.userId
+    const lang = resolveLang(ctx.request.body.lang)
 
     const entitled = await hasDayunFullEntitlement(userId)
     if (!entitled) {
@@ -496,7 +566,7 @@ router.post('/dayun-full', authRequired, quotaGuard({ dim: 'analysis.dayun_full'
     const refs = await retrieve(computed.mingju, { query: '大运十年阶段 吉凶转折' })
     const knowledgeContext = formatKnowledgeContext(refs)
 
-    const prompt = buildDayunFullPrompt(
+    const prompt = BUILDERS[lang].dayunFull(
       computed.baziStr,
       computed.mingju,
       fullList,
@@ -505,7 +575,7 @@ router.post('/dayun-full', authRequired, quotaGuard({ dim: 'analysis.dayun_full'
     const content = await generateAnalysis('dayun-full', prompt, {
       ...computed,
       fullList
-    })
+    }, lang)
 
     logger.info(`生成大运全卷解读: ${baziId}, 用户: ${userId}, refs ${refs.length}`)
 

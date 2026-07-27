@@ -3,9 +3,10 @@
 // 与 utils/localFallback.js 同职责：AI 网关超时/失败/配错 key 时，直接基于
 // utils/mingju.js 的确定性论断拼出可读段落，不让用户卡在报错上。
 //
-// 覆盖范围与 utils/promptBuilder.en.js 对齐（basic / deep 两条路径）——
-// 英文链路目前只做到这两条，四家并列与大运全卷仍是中文独有，
-// 等英文市场验证通过再补，不提前铺摊子。
+// 覆盖 5 条路径，与中文版一一对应：
+//   basic / deep / four-school / dayun-segment / dayun-full
+// 每条各自成文，绝不共用一段换个标题 —— 用户在四家解读页看到基础解读的
+// 内容，比看到报错更伤信任。
 //
 // 设计原则沿用中文版：
 //   - 不假装是 AI：开头明确标注模板来源，让用户知情
@@ -215,9 +216,174 @@ function buildDeepFallbackEn({ baziStr, dayunStr, mingju }) {
   ].join('\n')
 }
 
+// 四家的方法论一句话概括（与 fourSchoolPrompt.en.js 的 SCHOOLS_EN 对齐，
+// 但这里只保留降级模板讲得清的部分：AI 不可用时给不出四段独立解读，
+// 只能如实说明每派会看什么，并给出共通的确定性结论）
+const SCHOOL_BRIEFS_EN = [
+  ['Structural & Climatic Method (after Xu Leyu)',
+    'weighs whether the chart structure is intact and whether the season-driven '
+    + 'need is actually met by something present in the chart'],
+  ['Three-Track & Symbolic Stars Method (after Liang Xiangrun)',
+    'keeps auspicious indicators, structure and climatic need on separate tracks '
+    + 'rather than blending them'],
+  ['Palace, Minor Limits & Sound-Element Method (after Yuan Shushan)',
+    'adds the Life Palace, minor limits and the Na Yin element as supplementary readings'],
+  ['Eight-Step Method (after Wei Qianli)',
+    'runs a fixed sequence: strength, structure, governing element, favorable/unfavorable, '
+    + 'luck periods, family, temperament, career']
+]
+
+/**
+ * 四家并列解读降级模板（英文）
+ *
+ * AI 不可用时给不出四段独立解读 —— 那需要模型按各派方法论分别推演。
+ * 这里如实说明情况：列出四派各自的关注点 + 共通的确定性结论，
+ * 并明确告知这不是完整的四家解读，而非拿一段通用文字冒充四段。
+ */
+function buildFourSchoolFallbackEn({ baziStr, dayunStr, mingju }) {
+  const { xi, ji } = favorUnfavor(mingju)
+  const lines = [
+    LOCAL_TAG,
+    'Note: a full four-school reading requires the AI service, because each school '
+      + 'reasons through the chart by its own method. What follows is the shared '
+      + 'deterministic analysis plus what each school would focus on — not four '
+      + 'independent readings.',
+    '',
+    `Four Pillars: ${T.pillars(baziStr)}`,
+    dayunStr
+      ? `Luck Pillars: ${String(dayunStr).trim().split(/\s+/).map(T.pillar).join(' → ')}`
+      : null,
+    '',
+    'Shared findings (identical across all four schools — these are computed, not interpreted):',
+    `  Day Master: ${T.gan(mingju.dayMaster.gan)}, ${strengthLine(mingju)}`,
+    `  Structure: ${T.geju(mingju.geju.name)}`,
+    `  Favorable: ${xi} | Unfavorable: ${ji}`,
+    `  Climatic balance: ${tiaoHouLine(mingju)}`,
+    `  Elemental weights: ${weightsLine(mingju)}`,
+    '',
+    'What each school would examine:'
+  ].filter((x) => x !== null)
+
+  SCHOOL_BRIEFS_EN.forEach(([title, brief], i) => {
+    lines.push(`  ${i + 1}. ${title}`)
+    lines.push(`     ${brief}.`)
+  })
+
+  const conflict = conflictsLine(mingju)
+  if (conflict) {
+    lines.push('', conflict)
+  }
+
+  lines.push(
+    '',
+    'Please retry shortly for the full parallel reading.',
+    '',
+    basisAppendix(mingju),
+    '',
+    DISCLAIMER_EN
+  )
+  return lines.join('\n')
+}
+
+/**
+ * 单段大运降级模板（英文）
+ */
+function buildDayunSegmentFallbackEn({ baziStr, mingju, seg }) {
+  const { xi, ji } = favorUnfavor(mingju)
+  const tilt = seg.lean === 'xi'
+    ? `leans toward this chart's favorable elements (${xi})`
+    : seg.lean === 'ji'
+      ? `leans toward this chart's unfavorable elements (${ji})`
+      : 'shows no strong tilt either way'
+
+  return [
+    LOCAL_TAG,
+    `Four Pillars: ${T.pillars(baziStr)}`,
+    '',
+    `Luck period ${seg.segmentIndex + 1} of 8 — ${T.pillar(seg.ganZhi)}`,
+    `Ages ${T.ageRange(seg.ageRange)} (calendar years ${seg.startYear}-${seg.endYear})`,
+    '',
+    'What the engine computed for this period:',
+    `  Ten God on the stem: ${T.tenGod(seg.tianGanShen)}`,
+    `  Ten God on the branch: ${T.tenGod(seg.diZhiShen)}`,
+    `  Support vs drain: ${seg.support} vs ${seg.drain} (${(seg.ratio * 100).toFixed(0)}%)`,
+    `  Overall: this period ${tilt}.`,
+    '',
+    'Reading it practically:',
+    seg.lean === 'xi'
+      ? `  A period tilted toward ${xi} tends to be one where effort compounds more `
+        + 'readily. Traditionally this is when to build rather than consolidate.'
+      : seg.lean === 'ji'
+        ? `  A period tilted toward ${ji} tends to ask for more effort per unit of `
+          + 'result. Traditionally this is when to consolidate rather than over-extend.'
+        : '  A period without a strong tilt tends to reward whatever direction is '
+          + 'already established, rather than forcing a change.',
+    `  Either way, choices aligned with ${xi} tend to sit better with this chart.`,
+    '',
+    'A fuller reading (career, relationships, health, year-by-year guidance) requires',
+    'the AI service — please retry shortly.',
+    '',
+    'Derivation notes for this period (engine output, in Chinese):',
+    ...seg.basis.map((b, i) => `  ${i + 1}. ${b}`),
+    '',
+    DISCLAIMER_EN
+  ].join('\n')
+}
+
+/**
+ * 大运全卷降级模板（英文）
+ */
+function buildDayunFullFallbackEn({ baziStr, mingju, fullList }) {
+  const { xi, ji } = favorUnfavor(mingju)
+
+  const rows = fullList.map((s) => {
+    const tilt = s.lean === 'xi' ? 'supportive ' : s.lean === 'ji' ? 'challenging' : 'neutral    '
+    return `  ${String(s.segmentIndex + 1).padStart(2)}. ${T.pillar(s.ganZhi).padEnd(34)} `
+      + `ages ${T.ageRange(s.ageRange).padEnd(10)} ${tilt}  ${String((s.ratio * 100).toFixed(0)).padStart(3)}%`
+  })
+
+  // 转折点：相邻两段倾向变号处，这是全卷解读里最有信息量的部分
+  const turns = []
+  for (let i = 1; i < fullList.length; i++) {
+    const prev = fullList[i - 1]
+    const cur = fullList[i]
+    if (prev.lean !== cur.lean && (prev.lean === 'xi' || cur.lean === 'xi'
+      || prev.lean === 'ji' || cur.lean === 'ji')) {
+      turns.push(`  Around age ${T.ageRange(cur.ageRange).split('-')[0]}: `
+        + `${T.pillar(prev.ganZhi)} → ${T.pillar(cur.ganZhi)}`)
+    }
+  }
+
+  return [
+    LOCAL_TAG,
+    `Four Pillars: ${T.pillars(baziStr)}`,
+    `Day Master: ${T.gan(mingju.dayMaster.gan)} — ${strengthLine(mingju)}`,
+    `Favorable: ${xi} | Unfavorable: ${ji}`,
+    '',
+    'All 8 luck periods:',
+    '',
+    '   #  Luck Pillar                        Ages       Tilt         Ratio',
+    rows.join('\n'),
+    '',
+    'Transition points (where the tilt changes — traditionally these hinges matter',
+    'more than the periods themselves):',
+    turns.length ? turns.join('\n') : '  No sharp reversals across the eight periods.',
+    '',
+    'A fuller reading (career direction, financial rhythm, health themes across the',
+    'whole span) requires the AI service — please retry shortly.',
+    '',
+    basisAppendix(mingju),
+    '',
+    DISCLAIMER_EN
+  ].join('\n')
+}
+
 module.exports = {
   buildBasicFallbackEn,
   buildDeepFallbackEn,
+  buildFourSchoolFallbackEn,
+  buildDayunSegmentFallbackEn,
+  buildDayunFullFallbackEn,
   DISCLAIMER_EN,
   LOCAL_TAG
 }

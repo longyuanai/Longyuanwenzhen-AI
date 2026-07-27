@@ -11,6 +11,16 @@
 //   node scripts/preview-en-prompt.js --call --model=gpt-4o-mini   # 试便宜模型
 //   node scripts/preview-en-prompt.js --birth=1990-05-20T14 --gender=female
 //
+// 选型对比（回答「换 DeepSeek / 换便宜模型行不行」）：
+//   node scripts/preview-en-prompt.js --call --compare=gpt-4o-mini,deepseek-chat
+//   同一个盘、同一段提示词依次跑多个模型，并排打印输出与 token 消耗，
+//   肉眼判断质量差距是否值那个价差。
+//
+//   注意 baseUrl 是全局的：跨厂商对比要分两次跑，各自配好 OPENAI_BASE_URL。
+//   DeepSeek 兼容 OpenAI 协议，改 .env 即可：
+//     OPENAI_BASE_URL=https://api.deepseek.com/v1
+//     OPENAI_MODEL=deepseek-chat
+//
 // 顺带回答成本问题：--call 会打印本次实际消耗的 token 数（取自 API 的
 // usage 字段），可直接乘当期单价算单位成本。
 
@@ -25,13 +35,13 @@ const { buildBasicPrompt, buildDeepPrompt } = require('../utils/promptBuilder')
 function parseArgs(argv) {
   const a = {
     call: false, type: 'basic', model: null,
-    birth: '2002-11-20T10', gender: 'male', compare: false
+    birth: '2002-11-20T10', gender: 'male', compare: null
   }
   for (const x of argv.slice(2)) {
     if (x === '--call') a.call = true
-    else if (x === '--compare') a.compare = true
     else if (x.startsWith('--type=')) a.type = x.slice(7)
     else if (x.startsWith('--model=')) a.model = x.slice(8)
+    else if (x.startsWith('--compare=')) a.compare = x.slice(10).split(',').map((m) => m.trim()).filter(Boolean)
     else if (x.startsWith('--birth=')) a.birth = x.slice(8)
     else if (x.startsWith('--gender=')) a.gender = x.slice(9)
   }
@@ -131,27 +141,51 @@ async function main() {
     return
   }
 
-  const model = args.model || config.ai.openai.model
-  console.log(hr(`调用模型 ${model}`))
-  try {
-    const { content, usage, ms } = await callAi(enPrompt, model)
-    console.log(content)
-    console.log(hr('本次成本数据'))
-    console.log(`模型: ${model}`)
-    console.log(`耗时: ${(ms / 1000).toFixed(1)}s`)
-    if (usage) {
-      console.log(`输入 token: ${usage.prompt_tokens}`)
-      console.log(`输出 token: ${usage.completion_tokens}`)
-      console.log(`合计: ${usage.total_tokens}`)
-      console.log('\n乘当期单价即为单次解读成本；对照 config/products.js 的定价看毛利。')
-    } else {
-      console.log('（该端点未返回 usage 字段）')
-    }
-  } catch (err) {
-    const detail = err.response ? JSON.stringify(err.response.data).slice(0, 300) : err.message
-    console.error(`\n[调用失败] ${detail}`)
-    process.exitCode = 1
+  const models = args.compare && args.compare.length
+    ? args.compare
+    : [args.model || config.ai.openai.model]
+
+  console.log(hr(`端点 ${config.ai.openai.baseUrl}`))
+  if (models.length > 1) {
+    console.log('跨厂商对比请分两次跑：baseUrl 是全局配置，一次只能指向一个端点。')
   }
+
+  const stats = []
+  for (const model of models) {
+    console.log(hr(`模型 ${model}`))
+    try {
+      const { content, usage, ms } = await callAi(enPrompt, model)
+      console.log(content)
+      stats.push({ model, usage, ms, chars: content.length, ok: true })
+    } catch (err) {
+      const detail = err.response ? JSON.stringify(err.response.data).slice(0, 300) : err.message
+      console.error(`[调用失败] ${detail}`)
+      stats.push({ model, ok: false, err: detail })
+      process.exitCode = 1
+    }
+  }
+
+  console.log(hr('成本与耗时对比'))
+  console.log('模型'.padEnd(24) + '耗时     输入tok  输出tok  合计tok  输出字符')
+  console.log('─'.repeat(72))
+  stats.forEach((s) => {
+    if (!s.ok) {
+      console.log(s.model.padEnd(24) + '调用失败')
+      return
+    }
+    const u = s.usage || {}
+    console.log(
+      s.model.padEnd(24)
+      + `${(s.ms / 1000).toFixed(1)}s`.padEnd(9)
+      + String(u.prompt_tokens ?? '-').padEnd(9)
+      + String(u.completion_tokens ?? '-').padEnd(9)
+      + String(u.total_tokens ?? '-').padEnd(9)
+      + String(s.chars)
+    )
+  })
+  console.log('\n把合计 token 乘当期单价即为单次解读成本；')
+  console.log('对照 config/products.js 的定价（deep 9.9 / four_school 19.9 / dayun_full 49.9）看毛利。')
+  console.log('质量差距需要肉眼判断 —— 便宜多少倍不代表能用，看上面各模型的实际输出。')
 }
 
 main().catch((err) => {

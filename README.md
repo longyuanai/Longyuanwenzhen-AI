@@ -301,6 +301,9 @@ cd backend && npm run seed:friends:10
 
 ### 解读接口
 - `POST /api/v1/analysis/basic` - 基础解读(免费)
+
+> 所有 `/analysis/*` 接口都接受可选的 `lang` 字段(`zh` 默认 / `en`),
+> 决定提示词、AI 输出与降级模板的语言。非法值回落中文。
 - `POST /api/v1/analysis/deep` - 深度报告(鉴权 + 付费:deep_report / VIP)
 - `POST /api/v1/analysis/four-school` - 四家并列解读(鉴权 + 付费:four_school / VIP)
 - `POST /api/v1/analysis/dayun-segment` - 大运单段深度解读(鉴权 + 付费:dayun_segment 19.9 / VIP)

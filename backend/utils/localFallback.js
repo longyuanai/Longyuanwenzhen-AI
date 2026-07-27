@@ -33,6 +33,14 @@ function fmtTiaoHou(mingju) {
   return `${th.season}月,调候喜${th.need.join('')}${th.urgent ? '(急用)' : ''}`
 }
 
+// 五行分值：不能直接 JSON.stringify —— 那会把浮点噪声原样吐给用户
+// （实测出现过「火:15.599999999999998」），且大括号引号在正文里很突兀。
+function fmtWuxingScore(mingju) {
+  return Object.entries(mingju.wuxingScore)
+    .map(([el, v]) => `${el} ${Number(v).toFixed(1)}`)
+    .join('、')
+}
+
 function fmtStrength(mingju) {
   const s = mingju.strength
   const parts = [
@@ -57,7 +65,7 @@ function basicSection(mingju) {
     `日主为${dm.gan}${dm.element},${fmtStrength(mingju)}。`,
     `喜用神五行:${fmtXi(mingju)};忌神五行:${fmtJi(mingju)}。`,
     `调候:${fmtTiaoHou(mingju)}。`,
-    `五行倾向:${JSON.stringify(mingju.wuxingScore, null, 0)}。`,
+    `五行分值:${fmtWuxingScore(mingju)}。`,
     `${fmtConflicts(mingju)}`,
     '',
     '二、命局特点',
@@ -85,7 +93,7 @@ function deepSections(baziStr, dayunStr, mingju) {
     `${fmtConflicts(mingju)}`,
     '',
     '二、事业财运',
-    `命局五行分布:${JSON.stringify(mingju.wuxingScore)}。`,
+    `命局五行分布:${fmtWuxingScore(mingju)}。`,
     `若事业方向与喜用神五行一致(${fmtXi(mingju)}),倾向于较顺遂;`,
     `若与忌神五行(${fmtJi(mingju)})重合较多,则容易遇阻。具体取舍以现实行业属性为准。`,
     '',

@@ -19,7 +19,7 @@
 
 - **小程序**:微信原生 JS,无第三方 UI
 - **后端**:Node + Koa + Mongoose + Redis + JWT + axios + `lunar-javascript` + log4js
-- **AI**:OpenAI(`OPENAI_API_KEY`),端点/模型可用 `OPENAI_BASE_URL` / `OPENAI_MODEL` 覆盖;AI 网关挂了走本地降级模板(`utils/localFallback.js`,五条路径各自不同)
+- **AI**:OpenAI 协议(`OPENAI_API_KEY`),端点/模型用 `OPENAI_BASE_URL` / `OPENAI_MODEL` 覆盖。换 DeepSeek 等兼容厂商只改 .env,零代码改动。AI 网关挂了走本地降级模板(`utils/localFallback.js` / `.en.js`,五条路径各自不同)
 - **RAG**:LightRAG,索引源是 `bazi-skill-dist/books/` `cases/` `core/`,端点 `LIGHTRAG_URL`
 
 ## 常用命令
@@ -40,7 +40,7 @@ docker run -d --name bazi-mongo -p 27017:27017 mongo:7
 cd backend && npm start
 # 开发模式:npm run dev
 
-# 跑测试(30 套件 / 265 用例 / 约 8s)
+# 跑测试(37 套件 / 384 用例 / 约 12s)
 cd backend && npm test
 
 # 联调:自签 JWT + 插 user + paid four_school 订单(幂等)
@@ -59,7 +59,7 @@ node backend/scripts/dev-seed-test-user.js
 | 排盘 | `POST /api/v1/bazi/history/sync` | 鉴权,批量同步本机记录(登录后合并) |
 | 排盘 | `PUT /api/v1/bazi/history/:id` | 鉴权,改备注名(用 PUT 因 wx.request 不支持 PATCH) |
 | 排盘 | `DELETE /api/v1/bazi/history` | 鉴权,清空本人记录 |
-| 解读 | `POST /api/v1/analysis/basic` | 免费 |
+| 解读 | `POST /api/v1/analysis/basic` | 免费。**所有 /analysis/* 都收 `lang`(zh/en,默认 zh)** |
 | 解读 | `POST /api/v1/analysis/deep` | 鉴权 + 付费(deep_report / VIP) |
 | 解读 | `POST /api/v1/analysis/four-school` | 鉴权 + 付费(four_school / VIP),四家投票法 |
 | 解读 | `POST /api/v1/analysis/dayun-segment` | 鉴权 + 付费(dayun_segment 19.9 / VIP),单段深度 |
@@ -80,7 +80,7 @@ node backend/scripts/dev-seed-test-user.js
 - **两端排盘一致性由节气表保证**:`miniprogram/utils/solarTerms.js`(1899-2101,22KB)由 `backend/scripts/gen-solar-terms.js` 从 lunar-javascript 预生成,本地的立春分年/节气分月/起运年龄都基于它,与后端**按构造对齐**。表范围比支持范围两端各多一年(年初年末算起运要查相邻年的节)。
   改任一侧排盘逻辑或重新生成表后,必须跑 `utils/__tests__/paipan-parity.test.js`(含 6 个年份逐日扫描)。重新生成:`npm run gen:solar-terms`。
 - **身强弱 / 喜忌 / 格局由 `mingju.js` 确定性算**,作为"已知结论"注入 prompt;**绝不信任客户端**传入的论断
-- **AI 只翻译**:`utils/promptBuilder.js` 给基础/深度,`utils/fourSchoolPrompt.js` 给四家并列
+- **AI 只翻译**:`utils/promptBuilder.js` 给基础/深度,`utils/fourSchoolPrompt.js` 给四家并列,`utils/dayunPrompt.js` 给大运;各自有 `.en.js` 英文版
 - **农历输入**:`birth.calendar === 'lunar'` 走 `normalizeBirthToSolar`,闰月传负月份
 - **RAG**:`utils/knowledgeRetriever.js` 的 `retrieve(mingju, { query })`,**四家投票时给各家传不同 query**,否则 refs 全相同
 
@@ -92,10 +92,10 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 测试
 
-- jest,36 套件 / 371 用例 / ~10s 全绿(2026-07-25)
+- jest,37 套件 / 384 用例 / ~12s 全绿(2026-07-25)
 - 黄金基准:机主本人盘 2002-11-20 巳时男 + `bazi-skill-dist/cases/` 张学良 / 邵逸夫(均在 1900-2100 范围内)
 - 跑命令:`cd backend && npm test`
-- 测试目录:`utils/__tests__/`(20) + `routes/__tests__/`(8) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
+- 测试目录:`utils/__tests__/`(22) + `routes/__tests__/`(9) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
 - 端到端 RAG 测试 mock HTTP,**不依赖 LightRAG 实际运行**
 
 ## 联调锚点(2026-07-24 实战)
@@ -122,6 +122,7 @@ node backend/scripts/dev-seed-test-user.js
 - **✅ 解读接口只收 birth → 已修**:`/analysis/*` 收 `birth:{year,month,day,hour,minute,gender}`,后端自行排盘。客户端算的四柱/五行不是入参(服务端权威)。小程序侧用 `utils/bazi.js` 的 `buildBirthPayload(result)` 统一构造。
 - **`.env` 变量名**:以 `.env.example` 为准(`WX_SECRET` / `WXPAY_API_KEY` / `WXPAY_MCHID`)。`config/index.js` 兼容旧名 `WX_APPSECRET` / `WX_PAY_KEY`,新代码别用。`config/__tests__/env-wiring.test.js` 锁死这层接线。
 - **小程序配置集中在 `miniprogram/config.js`**:API 地址、客服微信号、版本号只写这一处,页面/工具层一律 require。`app.js` 启动跑 `checkConfig()` 告警占位值(localhost / 未替换的客服微信号)。文件末尾有开测与上线检查清单。
+- **英文链路已全线打通**:5 条解读路径各有 `*.en.js` 提示词与降级模板,路由按 `lang` 分发(`routes/analysis.js` 的 `BUILDERS` 表)。四家解读的英文标题用**方法论领衔、人名作出处**——徐乐吾等四位对英文读者没有认知度,音译过去卖点即失效。
 - **英文链路的术语表必须穷尽算法取值**:`utils/i18n/baziTerms.js` 的 STRENGTH(5 档,对齐 `wangShuai.js`)与 GEJU(13 种,对齐 `geju.js`)漏一个,该盘的英文正文就会混进中文。改这两个算法要同步补表,`utils/__tests__/promptBuilder.en.test.js` 直接对着取值清单校验。
 - **微信 tabBar 图标只认 png/jpg**:`assets/images/*.svg` 是设计源,`*.png` 才是小程序实际引用的。改图标要同步产出 png。
 - **`tasks.md` 与代码栈脱节**:`.codeartsdoer/specs/bazi_app/` 写 React Native + FastAPI + PostgreSQL,实际是原生小程序 + Koa + MongoDB。**以代码为准,不要被 spec 带偏**。
@@ -130,10 +131,7 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 路径 & 调试锚点
 
-- **算法层链路文档**:`docs/algorithm-pipeline.md`(2026-07-25 新增,14 个 utils 文件分工表 + 数据流图 + 防坑清单)
-
-## 路径 & 调试锚点
-
+- **算法层链路文档**:`docs/algorithm-pipeline.md`(14 个 utils 文件分工表 + 数据流图 + 防坑清单)
 - 后端日志:`backend/logs/`
 - 配置:`backend/.env`(`backend/.env.example` 是模板)
 - 小程序 baseURL:`miniprogram/utils/request.js` 的 `BASE_URL`
