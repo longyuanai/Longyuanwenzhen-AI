@@ -14,7 +14,8 @@
     "seed:friends": "node scripts/seed-friends.js",
     "seed:friends:10": "node scripts/seed-friends.js --count=10 --prefix=f",
     "seed:reset": "node scripts/seed-friends.js --reset --prefix=f",
-    "usage:report": "node scripts/ai-usage-report.js"
+    "usage:report": "node scripts/ai-usage-report.js",
+    "diff:paipan": "node scripts/diff-paipan.js"
   },
   "keywords": [
     "bazi",
@@ -40,6 +41,7 @@
   },
   "devDependencies": {
     "jest": "^29.6.1",
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.0.1",
+    "tyme4ts": "^1.5.2"
   }
 }

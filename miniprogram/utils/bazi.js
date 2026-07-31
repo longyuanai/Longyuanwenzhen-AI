@@ -175,6 +175,14 @@ function getDayPillar(year, month, day) {
  * @param {string} [nextDayGan] 次日日干，晚子时用；省略则退回 dayGan
  * @returns {object} 时柱 {gan, zhi, ganIndex, zhiIndex}
  */
+// 晚子时（23:00-23:59）日柱归属流派，必须与后端 BAZI_LATE_ZI_SECT 保持一致，
+// 否则 23 点出生的盘会出现「服务端排盘」与「本地兜底」结论打架。
+//   1 = 日柱进次日（默认，盘面自洽）
+//   2 = 日柱仍算当日、时干按次日起遁（会排出时柱推不回日主的矛盾盘）
+// 详见 backend/utils/bazi.js 中 LATE_ZI_SECT 的说明。
+// 后端若改成 2，这里必须同步改，并重跑 paipan-parity 测试。
+const LATE_ZI_SECT = 1
+
 function getHourPillar(dayGan, hour, nextDayGan) {
   const hourGanStart = {
     '甲': 0, '己': 0,  // 甲子起
@@ -435,10 +443,16 @@ function paipan(params) {
   // 计算四柱
   const yearPillar = getYearPillar(year, month, day, hour, minute)
   const monthPillar = getMonthPillar(jieLoc.jieIndex, yearPillar.gan)
-  const dayPillar = getDayPillar(year, month, day)
-  // 晚子时（23 点）时干按次日日干起遁，故需取次日日柱
+  // 晚子时（23 点）时干按次日日干起遁，故无论哪个流派都需要次日日柱
   const nextDay = new Date(year, month - 1, day + 1)
   const nextDayPillar = getDayPillar(nextDay.getFullYear(), nextDay.getMonth() + 1, nextDay.getDate())
+
+  // 流派 1：23 点即进次日，日柱与时柱同步跨日，盘面自洽
+  // 流派 2：日柱留在当日，时干仍按次日起遁（时柱推不回日主）
+  const calendarDayPillar = getDayPillar(year, month, day)
+  const dayPillar = (LATE_ZI_SECT === 1 && hour === 23) ? nextDayPillar : calendarDayPillar
+
+  // 起遁基准始终是次日日干——这一点两个流派相同
   const hourPillar = getHourPillar(dayPillar.gan, hour, nextDayPillar.gan)
 
   // 计算十神

@@ -40,8 +40,12 @@ docker compose exec backend npm run preflight   # 配置自检,有阻断项退�
 docker compose up -d mongo redis
 cd backend && npm run dev
 
-# 跑测试(38 套件 / 406 用例 / 约 9s)
+# 跑测试(39 套件 / 412 用例 / 约 10s)
 cd backend && npm test
+
+# 排盘差分校验(与 tyme4ts 对比,改排盘逻辑后必跑)
+cd backend && npm run diff:paipan            # 5000 随机盘
+cd backend && npm run diff:paipan -- --scan=1984   # 逐日扫描某年
 
 # 联调:自签 JWT + 插 user + paid four_school 订单(幂等)
 node backend/scripts/dev-seed-test-user.js
@@ -77,6 +81,9 @@ node backend/scripts/dev-seed-test-user.js
 
 - **排盘权威在后端**:`backend/utils/bazi.js`,基于 `lunar-javascript`,边界 `MIN_YEAR=1900` `MAX_YEAR=2100`,超界抛 `INVALID_INPUT` 返 400
 - **小程序排盘走服务端**:`pages/paipan/paipan.js` 调 `/bazi/paipan`,网络不可达才降级本地 `utils/bazi.js`(结果打 `isLocalFallback`,结果页出提示条)。后端明确返 400(如超界)时**不兜底**,直接报错——本地算法只会算出一个同样无效的盘。
+- **排盘正确性由第三方差分校验**:`npm run diff:paipan` 拿 `tyme4ts`(cantian-ai/bazi-mcp 的底层,与我们用的 lunar-javascript 同作者但为完整重写)当第二意见,逐柱 + 大运比对。`--scan=YYYY` 逐日扫描,`--seed=` 可复现。**改任何排盘逻辑后必跑** —— parity 测试只证明「两端算得一样」,差分才证明「算得对」。首轮就抓出了晚子时流派问题(见下条)。
+- **晚子时(23 点)默认走流派 1**:日柱进次日,`BAZI_LATE_ZI_SECT=2` 可切回流派 2。流派 2 是 lunar-javascript 的默认值,但它会排出**矛盾盘** —— 1965-12-23 23:45 得 日柱`辛亥`+时柱`庚子`,而辛日的子时按五鼠遁应是`戊子`(庚子是从次日日干壬推来的)。于是时干十神拿错误的日主去算,`偏印`变`劫财`,再级联到身强弱/喜忌/格局。影响所有 23 点出生者(约 4%)。**改这个开关必须同步改 `miniprogram/utils/bazi.js` 的 `LATE_ZI_SECT`**,否则服务端排盘与本地兜底会对同一个盘给出不同结论。
+- **起运年龄是「lunar 流派1」,不是算错**:tyme4ts 有 4 种起运 provider,实测 3000 盘只有 `LunarSect1ChildLimitProvider` 与我们 100% 一致(Default/China95/LunarSect2 各差 ~1%)。差分脚本已钉死该 provider,别删 —— 否则每次跑都冒出 1% 已知流派噪音,真 bug 就被淹了。
 - **两端排盘一致性由节气表保证**:`miniprogram/utils/solarTerms.js`(1899-2101,22KB)由 `backend/scripts/gen-solar-terms.js` 从 lunar-javascript 预生成,本地的立春分年/节气分月/起运年龄都基于它,与后端**按构造对齐**。表范围比支持范围两端各多一年(年初年末算起运要查相邻年的节)。
   改任一侧排盘逻辑或重新生成表后,必须跑 `utils/__tests__/paipan-parity.test.js`(含 6 个年份逐日扫描)。重新生成:`npm run gen:solar-terms`。
 - **身强弱 / 喜忌 / 格局由 `mingju.js` 确定性算**,作为"已知结论"注入 prompt;**绝不信任客户端**传入的论断
@@ -92,10 +99,11 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 测试
 
-- jest,38 套件 / 406 用例 / ~9s 全绿(2026-07-25)
+- jest,39 套件 / 412 用例 / ~10s 全绿(2026-07-31)
 - 黄金基准:机主本人盘 2002-11-20 巳时男 + `bazi-skill-dist/cases/` 张学良 / 邵逸夫(均在 1900-2100 范围内)
 - 跑命令:`cd backend && npm test`
-- 测试目录:`utils/__tests__/`(24) + `routes/__tests__/`(9) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
+- 测试目录:`utils/__tests__/`(25) + `routes/__tests__/`(9) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
+- **测试之外还有一层**:`npm run diff:paipan` 与第三方实现差分。它不在 `npm test` 里(要跑几千个盘,慢),但改排盘逻辑后必须手动跑一次。
 - 端到端 RAG 测试 mock HTTP,**不依赖 LightRAG 实际运行**
 
 ## 联调锚点(2026-07-24 实战)

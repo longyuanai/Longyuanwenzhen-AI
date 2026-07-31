@@ -67,12 +67,33 @@ describe('前后端排盘一致性 - 四柱', () => {
     expect(before.server.yearPillar.zhi).not.toBe(after.server.yearPillar.zhi)
   })
 
-  test('晚子时：23 点出生时干按次日日干起遁，两端一致', () => {
+  test('晚子时：23 点日柱进次日，时柱由该日干起遁，两端一致', () => {
     const { server, local } = bothPaipan(2010, 12, 31, 23, 'female')
     expect(pillarsOf(local)).toBe(pillarsOf(server))
-    // 乙卯日 23 点：日柱不变，时柱用次日(丙辰日)的丙起遁 → 戊子
-    expect(server.dayPillar.gan + server.dayPillar.zhi).toBe('乙卯')
+    // 流派 1（默认）：23 点即进次日 → 日柱由乙卯进为丙辰，
+    // 时柱按丙起遁得戊子。日柱与时柱同源，盘面自洽。
+    expect(server.dayPillar.gan + server.dayPillar.zhi).toBe('丙辰')
     expect(server.hourPillar.gan + server.hourPillar.zhi).toBe('戊子')
+  })
+
+  // 这条锁的是「盘面自洽」这个性质本身，而不是某个具体干支。
+  // 旧的流派 2 排出过 日柱=辛亥 + 时柱=庚子（庚子是从次日日干壬推的，
+  // 辛日的子时本应是戊子），导致时干十神以错误的日主计算，
+  // 进而污染身强弱/喜忌/格局。由 scripts/diff-paipan.js 与 tyme4ts 差分发现。
+  test('晚子时：时柱必须能由盘面日主按五鼠遁推回（不允许矛盾盘）', () => {
+    // 五鼠遁：甲己起甲子、乙庚起丙子、丙辛起戊子、丁壬起庚子、戊癸起壬子
+    const ZI_START = { 甲: '甲', 己: '甲', 乙: '丙', 庚: '丙', 丙: '戊', 辛: '戊', 丁: '庚', 壬: '庚', 戊: '壬', 癸: '壬' }
+
+    // 连续 40 天覆盖完整一轮日干，且横跨月界与年界
+    for (let i = 0; i < 40; i++) {
+      const d = new Date(Date.UTC(1965, 11, 10 + i))
+      const { server, local } = bothPaipan(
+        d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), 23, 'male')
+
+      expect(pillarsOf(local)).toBe(pillarsOf(server))
+      expect(server.hourPillar.zhi).toBe('子')
+      expect(server.hourPillar.gan).toBe(ZI_START[server.dayPillar.gan])
+    }
   })
 
   test('元旦前后（当年小寒未到，归上一年子月）两端一致', () => {

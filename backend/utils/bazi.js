@@ -18,6 +18,26 @@ const WUXING = {
 const MIN_YEAR = 1900
 const MAX_YEAR = 2100
 
+// 晚子时（23:00-23:59）日柱归属流派。
+//
+//   1 = 日柱进次日（默认）。子时即新的一天，日柱与时柱同步跨日。
+//   2 = 日柱仍算当日，但时干仍按次日日干起遁（lunar-javascript 的默认）。
+//
+// 为什么默认改成 1：流派 2 会排出**盘面自相矛盾**的命盘。
+// 实例 1965-12-23 23:45：流派 2 给出 日柱=辛亥、时柱=庚子，
+// 而按五鼠遁，辛日的子时应是戊子——庚子是从次日日干「壬」推来的。
+// 于是时干十神以「辛」为日主去算庚（劫财），若按流派 1（日主壬）
+// 同一个庚是偏印。十神 → 身强弱 → 喜忌 → 格局 全线级联走偏，
+// 影响所有 23 点出生的用户（约 4%）。
+//
+// 该分歧由 scripts/diff-paipan.js 与 tyme4ts 差分校验发现：
+// 5000 盘中 219 例日柱不一致，100% 落在 23 点。
+// 流派 1 同时对齐 tyme4ts 默认与 cantian-ai/bazi-mcp 的取值。
+//
+// 仍保留切换口子：命理各家对晚子时确有分歧，遇到坚持流派 2 的
+// 命理师时设 BAZI_LATE_ZI_SECT=2 即可，无需改代码。
+const LATE_ZI_SECT = process.env.BAZI_LATE_ZI_SECT === '2' ? 2 : 1
+
 /**
  * 校验排盘输入
  * @returns {string|null} 错误信息，null 表示通过
@@ -55,6 +75,9 @@ function paipan(params) {
   const solar = Solar.fromYmdHms(year, month, day, hour, minute, 0)
   const lunar = solar.getLunar()
   const ec = lunar.getEightChar()
+  // 必须在读取任何柱之前设置：sect 只影响晚子时的日柱归属，
+  // 但十神/藏干都由日柱派生，设晚了拿到的是旧值。
+  ec.setSect(LATE_ZI_SECT)
 
   // 四柱
   const yearPillar = { gan: ec.getYearGan(), zhi: ec.getYearZhi() }
@@ -129,4 +152,4 @@ function paipan(params) {
   }
 }
 
-module.exports = { paipan, validateInput, WUXING, MIN_YEAR, MAX_YEAR }
+module.exports = { paipan, validateInput, WUXING, MIN_YEAR, MAX_YEAR, LATE_ZI_SECT }
