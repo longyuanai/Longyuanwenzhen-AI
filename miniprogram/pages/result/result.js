@@ -66,8 +66,34 @@ Page({
       // 服务端排盘不可达时用了本地简化算法（起运年龄/大运区间会有偏差），
       // 明确告知用户，避免把降级结果当成权威结论
       isLocalFallback: !!result.isLocalFallback,
-      trueSolarTime: this.buildTrueSolarTimeTip(result)
+      trueSolarTime: this.buildTrueSolarTimeTip(result),
+      shenSha: this.buildShenSha(result)
     })
+  },
+
+  // 神煞与命宫身宫。服务端返回就用服务端的，离线兜底时本地也算得出，
+  // 两边同源（miniprogram/utils/shensha.js 由后端生成），结论一致。
+  // 老版本后端不返回这个字段，此时整块不渲染，页面不会出现空壳。
+  buildShenSha(result) {
+    const s = result && result.shenSha
+    if (!s || !s.list) return null
+
+    const gz = (p) => (p && p.ganZhi) || (p ? p.gan + p.zhi : '')
+    // pillarLabels 是数组，WXML 里直接插值会渲染成「年柱,月柱」带英文逗号。
+    // 在这里拼好字符串，视图层只管显示。
+    const view = (x) => Object.assign({}, x, {
+      pillarText: (x.pillarLabels || []).join(' / ')
+    })
+
+    return {
+      mingGong: gz(s.mingGong),
+      shenGong: gz(s.shenGong),
+      kongWang: (s.kongWang || []).join('、'),
+      // 吉神与中性煞分开展示：混在一起用户分不清哪些是好事
+      auspicious: s.list.filter((x) => x.category === 'auspicious').map(view),
+      neutral: s.list.filter((x) => x.category !== 'auspicious').map(view),
+      note: s.note || ''
+    }
   },
 
   // 真太阳时提示条。没启用校正就返回 null（不填出生地的用户看不到任何变化）。

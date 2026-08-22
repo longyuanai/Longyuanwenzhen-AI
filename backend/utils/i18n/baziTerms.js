@@ -106,6 +106,38 @@ const GEJU = {
   普通格: 'no dominant structure (a mixed chart)'
 }
 
+// 神煞英译。取值清单必须与 utils/shensha.js 的 CATEGORY 完全对齐——
+// 少一个，该盘的英文正文就会混进中文（STRENGTH/GEJU 上已经栽过一次）。
+// utils/__tests__/shensha.i18n.test.js 直接对着 CATEGORY 校验。
+//
+// 译名以「说清是什么」为先，不硬凑音译：Tian Yi / Hua Gai 对英文读者
+// 是纯噪音，括号里的音译只作索引用，让懂行的人能对上原名。
+const SHEN_SHA = {
+  天乙贵人: 'Heavenly Noble (Tian Yi) — the foremost benefactor star',
+  天德贵人: 'Heavenly Virtue (Tian De) — protective grace',
+  月德贵人: 'Monthly Virtue (Yue De) — sustained good fortune',
+  文昌贵人: 'Literary Star (Wen Chang) — scholarship and craft',
+  禄神: 'Prosperity Star (Lu) — self-sustaining livelihood',
+  将星: 'General Star (Jiang Xing) — natural command',
+  华盖: 'Canopy Star (Hua Gai) — artistic, philosophical, solitary',
+  驿马: 'Travelling Horse (Yi Ma) — mobility and momentum',
+  桃花: 'Peach Blossom (Tao Hua) — charm and artistic appeal',
+  羊刃: 'Blade (Yang Ren) — sharp, decisive force',
+  孤辰: 'Solitary Star (Gu Chen) — independence from kin',
+  寡宿: 'Widowed Star (Gua Su) — a preference for solitude',
+  空亡: 'Void (Kong Wang) — that pillar\'s influence runs thin'
+}
+
+// 命宫 / 身宫
+const PALACE = {
+  mingGong: 'Destiny Palace (Ming Gong)',
+  shenGong: 'Body Palace (Shen Gong)'
+}
+
+const PILLAR_NAME = {
+  year: 'Year pillar', month: 'Month pillar', day: 'Day pillar', hour: 'Hour pillar'
+}
+
 // 查表并回退原文：宁可提示词里出现中文，也不能出现 undefined
 function lookup(table, key, pick) {
   const hit = table[key]
@@ -118,6 +150,8 @@ const element = (z) => lookup(ELEMENT, z)
 const strength = (z) => lookup(STRENGTH, z)
 const season = (z) => lookup(SEASON, z)
 const tenGod = (z) => lookup(TEN_GOD, z)
+const shenSha = (z) => lookup(SHEN_SHA, z)
+const pillarName = (k) => lookup(PILLAR_NAME, k)
 
 // 格局无对照时给个可读的兜底，而不是直接吐中文
 function geju(name) {
@@ -165,7 +199,7 @@ function ageRange(s) {
 }
 
 module.exports = {
-  ELEMENT, GAN, ZHI, TEN_GOD, STRENGTH, SEASON, GEJU,
+  ELEMENT, GAN, ZHI, TEN_GOD, STRENGTH, SEASON, GEJU, SHEN_SHA, PALACE, PILLAR_NAME,
   element, elements, gan, zhi, pillar, pillars, ageRange,
-  strength, season, tenGod, geju
+  strength, season, tenGod, geju, shenSha, pillarName
 }

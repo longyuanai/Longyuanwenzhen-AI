@@ -26,6 +26,7 @@
 // 退出码：0 = 零分歧；1 = 有分歧
 
 const { paipan, MIN_YEAR, MAX_YEAR, LATE_ZI_SECT } = require('../utils/bazi')
+const { computePalaces } = require('../utils/shensha')
 const {
   SolarTime, ChildLimit, Gender, LunarSect1ChildLimitProvider
 } = require('tyme4ts')
@@ -71,6 +72,8 @@ function reference({ year, month, day, hour, minute, gender }) {
     zhi: cycle.getEarthBranch().getName()
   })
 
+  const palaces = { mingGong: ec.getOwnSign().getName(), shenGong: ec.getBodySign().getName() }
+
   const cl = ChildLimit.fromSolarTime(st, gender === 'male' ? Gender.MAN : Gender.WOMAN)
   const daYunList = []
   let df = cl.getStartDecadeFortune()
@@ -88,7 +91,8 @@ function reference({ year, month, day, hour, minute, gender }) {
     monthPillar: pillar(ec.getMonth()),
     dayPillar: pillar(ec.getDay()),
     hourPillar: pillar(ec.getHour()),
-    daYun: { startAge: daYunList[0].ageStart, daYunList }
+    daYun: { startAge: daYunList[0].ageStart, daYunList },
+    palaces
   }
 }
 
@@ -108,6 +112,13 @@ function compare(ours, theirs) {
   if (ours.daYun.startAge !== theirs.daYun.startAge) {
     push('daYun.startAge', ours.daYun.startAge, theirs.daYun.startAge)
   }
+
+  // 命宫身宫：公式是从 tyme4ts 反推的，更要拿它验回去
+  const p = computePalaces(ours)
+  const mg = p.mingGong.gan + p.mingGong.zhi
+  const sg = p.shenGong.gan + p.shenGong.zhi
+  if (mg !== theirs.palaces.mingGong) push('mingGong', mg, theirs.palaces.mingGong)
+  if (sg !== theirs.palaces.shenGong) push('shenGong', sg, theirs.palaces.shenGong)
 
   // 大运干支序列：方向错、起点错都会在这里暴露
   const n = Math.min(ours.daYun.daYunList.length, theirs.daYun.daYunList.length)
@@ -222,7 +233,7 @@ function main() {
   }
 
   if (bad === 0) {
-    console.log('\n✓ 零分歧。两套独立实现对四柱与大运的结论完全一致。')
+    console.log('\n✓ 零分歧。两套独立实现对四柱、大运、命宫身宫的结论完全一致。')
     console.log('  注：这排除的是「我们调错 API / 组装逻辑写错」，')
     console.log('      不排除「两库对某条命理规则的理解共同有偏差」。')
     return 0

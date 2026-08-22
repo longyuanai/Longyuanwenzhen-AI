@@ -232,6 +232,93 @@
   line-height: 1.6;
 }
 
+/* ── 神煞 · 命宫身宫 ── */
+.palace-row {
+  display: flex;
+  justify-content: space-around;
+  padding: 20rpx 0 24rpx;
+  border-bottom: 2rpx solid #f0f0f0;
+}
+
+.palace-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.palace-label {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.palace-value {
+  margin-top: 8rpx;
+  font-size: 34rpx;
+  font-weight: 500;
+  color: #333;
+}
+
+.ss-group {
+  margin-top: 24rpx;
+}
+
+.ss-group-title {
+  font-size: 26rpx;
+  color: #999;
+  margin-bottom: 12rpx;
+}
+
+.ss-item {
+  padding: 16rpx 0;
+  border-bottom: 2rpx solid #fafafa;
+}
+
+.ss-head {
+  display: flex;
+  align-items: baseline;
+}
+
+.ss-name {
+  font-size: 30rpx;
+  font-weight: 500;
+  color: #333;
+}
+
+/* 吉神用暖色标出来，与中性煞区分 —— 混在一起用户分不清哪些是好事 */
+.ss-name-good {
+  color: #d48806;
+}
+
+.ss-pillars {
+  margin-left: 16rpx;
+  font-size: 24rpx;
+  color: #999;
+}
+
+.ss-meaning {
+  display: block;
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #666;
+}
+
+.ss-empty {
+  padding: 24rpx 0;
+  font-size: 26rpx;
+  color: #999;
+}
+
+/* 免责说明：神煞是辅助信号，这句不能省 */
+.ss-note {
+  margin-top: 20rpx;
+  padding-top: 16rpx;
+  border-top: 2rpx solid #f0f0f0;
+  font-size: 22rpx;
+  line-height: 1.6;
+  color: #aaa;
+}
+
 /* 真太阳时提示：用蓝色而非降级提示的橙色 —— 这是「算得更准」，
    不是「结果有偏差」，两者语义相反，配色不能混 */
 .tst-tip {

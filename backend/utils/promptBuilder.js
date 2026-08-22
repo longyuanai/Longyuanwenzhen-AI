@@ -22,8 +22,32 @@ function formatMingliFacts(mingju) {
     `忌神（五行）：${mingju.yongShen.jiShen.join('、') || '无'}`,
     `调候：${th.season}月，${th.need.length ? th.need.join('') + (th.urgent ? '（急用）' : '') : '无显著需求'}`,
     `格局：${mingju.geju.name}`,
-    `判定依据：${mingju.basis.join('；')}`
+    `判定依据：${mingju.basis.join('；')}`,
+    ...formatShenShaLines(mingju.shenSha)
   ].join('\n')
+}
+
+/**
+ * 神煞区块。mingju.shenSha 由 routes 侧挂上（analyzeShenSha 的结果），
+ * 没有就整块不出现——老调用方与单测传的 mingju 不带这个字段。
+ *
+ * 措辞上刻意压低分量：神煞是辅助信号，梁湘润本人也写明「不能作为主要断法」。
+ * 不加这句约束，模型会抓着「天乙贵人」大书特书，把格局用神挤到一边。
+ */
+function formatShenShaLines(shenSha) {
+  if (!shenSha) return []
+  const lines = [
+    `命宫：${shenSha.mingGong.gan}${shenSha.mingGong.zhi}　身宫：${shenSha.shenGong.gan}${shenSha.shenGong.zhi}`,
+    `空亡（旬空）：${shenSha.kongWang.join('、')}`
+  ]
+  if (shenSha.list.length) {
+    lines.push('神煞：' + shenSha.list
+      .map((s) => `${s.name}（${s.pillarLabels.join('/')}）`).join('，'))
+  } else {
+    lines.push('神煞：无显著命中')
+  }
+  lines.push('神煞使用约束：仅作辅助参考，不得据以下吉凶断语，更不得凌驾于格局与喜忌之上。')
+  return lines
 }
 
 /**

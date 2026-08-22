@@ -2,6 +2,7 @@
 const Router = require('koa-router')
 const logger = require('../utils/logger')
 const { paipan } = require('../utils/bazi')
+const { analyzeShenSha } = require('../utils/shensha')
 const { authRequired, authOptional } = require('../middleware/auth')
 const recordStore = require('../utils/baziRecordStore')
 
@@ -68,6 +69,9 @@ router.post('/paipan', authOptional, async (ctx) => {
 
     // 后端权威排盘（对齐 spec 5.2.2：排盘以后端计算为准）
     const result = paipan({ ...birth, gender: normGender, birthPlace, longitude })
+    // 神煞与命宫身宫：纯查表，不花 AI token，免费档直接给。
+    // 结果页读的就是这个接口——不在这里返回，小程序只有离线兜底时才看得到神煞。
+    result.shenSha = analyzeShenSha(result)
 
     const baziStr = ['year', 'month', 'day', 'hour']
       .map((k) => result[k + 'Pillar'].gan + result[k + 'Pillar'].zhi)

@@ -40,7 +40,7 @@ docker compose exec backend npm run preflight   # 配置自检,有阻断项退�
 docker compose up -d mongo redis
 cd backend && npm run dev
 
-# 跑测试(43 套件 / 486 用例 / 约 10s)
+# 跑测试(48 套件 / 529 用例 / 约 12s)
 cd backend && npm test
 
 # 排盘差分校验(与 tyme4ts 对比,改排盘逻辑后必跑)
@@ -49,6 +49,9 @@ cd backend && npm run diff:paipan -- --scan=1984   # 逐日扫描某年
 
 # 真太阳时模块同步到小程序(改了 backend/utils/trueSolarTime.js 后必跑)
 cd backend && npm run gen:true-solar-time
+
+# 神煞模块同步到小程序(改了 backend/utils/shensha.js 或 geju.js 后必跑)
+cd backend && npm run gen:shensha
 
 # 联调:自签 JWT + 插 user + paid four_school 订单(幂等)
 node backend/scripts/dev-seed-test-user.js
@@ -71,7 +74,7 @@ node backend/scripts/dev-seed-test-user.js
 | 解读 | `POST /api/v1/analysis/four-school` | 鉴权 + 付费(four_school / VIP),四家投票法 |
 | 解读 | `POST /api/v1/analysis/dayun-segment` | 鉴权 + 付费(dayun_segment 19.9 / VIP),单段深度 |
 | 解读 | `POST /api/v1/analysis/dayun-full` | 鉴权 + 付费(dayun_full 49.9 / VIP),8 段全卷 |
-| 解读 | `POST /api/v1/analysis/checkup` | 免费五行体检,7ms,含 currentDaYun;`lang=en` 时附 `labels` 英文术语块 |
+| 解读 | `POST /api/v1/analysis/checkup` | 免费五行体检,含 currentDaYun + `shenSha`(神煞/命宫身宫);`lang=en` 时附 `labels` 英文术语块 |
 | 订单 | `POST /api/v1/order/create` | 鉴权,服务端定价 |
 | 订单 | `POST /api/v1/order/callback` | **微信回调,公开**,唯一合法 paid 入口 |
 | 订单 | `GET /api/v1/order/list` | 鉴权 |
@@ -88,6 +91,8 @@ node backend/scripts/dev-seed-test-user.js
 - **晚子时(23 点)默认走流派 1**:日柱进次日,`BAZI_LATE_ZI_SECT=2` 可切回流派 2。流派 2 是 lunar-javascript 的默认值,但它会排出**矛盾盘** —— 1965-12-23 23:45 得 日柱`辛亥`+时柱`庚子`,而辛日的子时按五鼠遁应是`戊子`(庚子是从次日日干壬推来的)。于是时干十神拿错误的日主去算,`偏印`变`劫财`,再级联到身强弱/喜忌/格局。影响所有 23 点出生者(约 4%)。**改这个开关必须同步改 `miniprogram/utils/bazi.js` 的 `LATE_ZI_SECT`**,否则服务端排盘与本地兜底会对同一个盘给出不同结论。
 - **起运年龄是「lunar 流派1」,不是算错**:tyme4ts 有 4 种起运 provider,实测 3000 盘只有 `LunarSect1ChildLimitProvider` 与我们 100% 一致(Default/China95/LunarSect2 各差 ~1%)。差分脚本已钉死该 provider,别删 —— 否则每次跑都冒出 1% 已知流派噪音,真 bug 就被淹了。
 - **真太阳时默认关闭,传了出生地才校正**:`utils/trueSolarTime.js`。入参 `birthPlace`(122 城离线经度表)或 `longitude`,两者都不给就完全不校正 —— 历史记录里没有出生地,静默启用会改掉用户已看过的盘。**经度校正只是一半,另一半是均时差**(±16 分钟,足以跨时辰边界),用 NOAA/Meeus 算法,实测与天文年历偏差 <0.2 分钟。校正**会跨日**(喀什 00:30 退到前一天 21:34),跨日就换日柱换日主换全部十神,所以返回的是完整年月日而非只调时分。`input` 里存的始终是**钟表时间**,不是校正后的时刻 —— 否则拿 input 二次排盘会把校正叠加两次。小程序侧 `miniprogram/utils/trueSolarTime.js` 是**后端同一文件的生成物**(`npm run gen:true-solar-time`),`trueSolarTime.gen.test.js` 守住不同步就变红。
+- **神煞只做展示型，凶煞刻意不实现**:`utils/shensha.js` 依据 `bazi-skill-dist/core/梁湘润神煞探原通读笔记.md`,算 13 个通行神煞(天乙/天德/月德/文昌/禄神/将星/华盖/驿马/桃花/羊刃/孤辰/寡宿/空亡)+ 命宫身宫。**自缢杀、冲天杀、戳肢杀、天屠杀这类凶煞不算也不显** —— 对 C 端用户有实际伤害,且命理类目审核最先盯恐吓性内容;梁本人也写明"神煞不能作为主要断法"。`shensha.test.js` 有一条用例专门拦「日后有人顺手把凶煞加回来」。禄神/羊刃表**复用 `geju.js`**,不另抄一份(否则「羊刃格」与「羊刃神煞」会各说各话)。
+- **命宫身宫的公式是反推来的,靠差分守住**:`命宫支=(5−月支序−时支序) mod 12`(逆行),`身宫支=(月支序+时支序+1) mod 12`(顺行),两宫天干均由**年干**按五虎遁起(立春分年,不是公历年)。规律从 tyme4ts 的 `getOwnSign()/getBodySign()` 反推,已并入 `npm run diff:paipan` 逐盘验回去。小程序侧 `miniprogram/utils/shensha.js` 是生成物(`npm run gen:shensha`),生成时把 geju 的两张表**内联**进去(小程序没有 geju.js)。
 - **地支十神必须按藏干本气算**:`getShiShenOfZhi(dayGan, zhi)` 取 `CANG_GAN[zhi][0]` 再论十神。小程序侧曾把**地支直接喂给只吃天干的 `getShiShen()`** —— `WUXING` 表恰好也收了地支,五行查得到掩盖了错误,但 `TIANGAN.indexOf('亥')` 返回 -1,`-1 % 2 === -1` 永不等于日干的 0/1,于是四个地支十神一律落到「异性」那一档。黄金基准盘上 3/4 地支十神是错的而四柱全对,旧 parity 测试只比四柱所以一路绿灯。`getShiShen()` 现在收到地支会抛错。
 - **两端排盘一致性由节气表保证**:`miniprogram/utils/solarTerms.js`(1899-2101,22KB)由 `backend/scripts/gen-solar-terms.js` 从 lunar-javascript 预生成,本地的立春分年/节气分月/起运年龄都基于它,与后端**按构造对齐**。表范围比支持范围两端各多一年(年初年末算起运要查相邻年的节)。
   改任一侧排盘逻辑或重新生成表后,必须跑 `utils/__tests__/paipan-parity.test.js`(含 6 个年份逐日扫描)。重新生成:`npm run gen:solar-terms`。
@@ -104,10 +109,10 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 测试
 
-- jest,43 套件 / 486 用例 / ~10s 全绿(2026-08-22)
+- jest,48 套件 / 529 用例 / ~12s 全绿(2026-08-22)
 - 黄金基准:机主本人盘 2002-11-20 巳时男 + `bazi-skill-dist/cases/` 张学良 / 邵逸夫(均在 1900-2100 范围内)
 - 跑命令:`cd backend && npm test`
-- 测试目录:`utils/__tests__/`(28) + `routes/__tests__/`(10) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
+- 测试目录:`utils/__tests__/`(32) + `routes/__tests__/`(11) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
 - **测试之外还有一层**:`npm run diff:paipan` 与第三方实现差分。它不在 `npm test` 里(要跑几千个盘,慢),但改排盘逻辑后必须手动跑一次。
 - 端到端 RAG 测试 mock HTTP,**不依赖 LightRAG 实际运行**
 

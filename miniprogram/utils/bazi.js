@@ -14,6 +14,7 @@
 
 const solarTerms = require('./solarTerms')
 const { resolveLongitude, toTrueSolarTime } = require('./trueSolarTime')
+const { analyzeShenSha } = require('./shensha')
 
 // 天干
 const TIANGAN = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']
@@ -610,6 +611,10 @@ function paipan(params) {
 
     trueSolarTime: trueSolarTime
   }
+
+  // 神煞与命宫身宫。纯查表，不依赖网络，离线兜底时照样算得出来。
+  // 放在 result 组装完之后：analyzeShenSha 读的是四柱，而四柱到这里才齐。
+  result.shenSha = analyzeShenSha(result)
 
   return result
 }

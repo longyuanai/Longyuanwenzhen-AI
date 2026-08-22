@@ -26,6 +26,34 @@ const T = require('./i18n/baziTerms')
  * 确定性论断 → 英文"已知结论"区块
  * @param {object} mingju analyzeMingju() 返回对象
  */
+/**
+ * 神煞区块（英文）。mingju.shenSha 缺省时整块不出现。
+ *
+ * 与中文侧同样要压分量：不加约束，模型会围着 "Heavenly Noble" 大写特写，
+ * 把格局与喜忌挤没。英文读者对这类星曜名尤其容易当真。
+ */
+function formatShenShaLinesEn(shenSha) {
+  if (!shenSha) return []
+  const p = (k) => T.PALACE[k]
+  const lines = [
+    `${p('mingGong')}: ${T.pillar(shenSha.mingGong.gan + shenSha.mingGong.zhi)}`,
+    `${p('shenGong')}: ${T.pillar(shenSha.shenGong.gan + shenSha.shenGong.zhi)}`,
+    `Void branches (Kong Wang): ${shenSha.kongWang.map(T.zhi).join(', ')}`
+  ]
+  if (shenSha.list.length) {
+    lines.push('Symbolic stars (Shen Sha) present:')
+    for (const s of shenSha.list) {
+      lines.push(`  - ${T.shenSha(s.name)} — on ${s.pillars.map(T.pillarName).join(', ')}`)
+    }
+  } else {
+    lines.push('Symbolic stars (Shen Sha): none of note')
+  }
+  lines.push(
+    'Constraint on Shen Sha: treat these as secondary colour only. Never build a',
+    'prediction on them, and never let them override structure or favorable elements.')
+  return lines
+}
+
 function formatMingliFactsEn(mingju) {
   const s = mingju.strength
   const th = mingju.yongShen.tiaoHou
@@ -54,6 +82,7 @@ function formatMingliFactsEn(mingju) {
     `Chart structure (Ge Ju): ${T.geju(mingju.geju.name)}`
       + `${mingju.geju.isSpecial ? ' [special structure]' : ''}`
       + `${mingju.geju.isPure ? ' [clean/pure]' : ''}`,
+    ...formatShenShaLinesEn(mingju.shenSha),
     '',
     'Derivation notes from the engine (written in Chinese — restate their meaning',
     'in English where relevant; do not quote them verbatim in the output):',

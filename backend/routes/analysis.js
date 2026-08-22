@@ -11,6 +11,7 @@ const { antiBrush, quotaGuard } = require('../middleware/access')
 const sentry = require('../utils/sentry')
 const { paipan } = require('../utils/bazi')
 const { analyzeMingju } = require('../utils/mingju')
+const { analyzeShenSha } = require('../utils/shensha')
 const { buildBasicPrompt, buildDeepPrompt, validateAiOutput, formatKnowledgeContext } = require('../utils/promptBuilder')
 const { retrieve } = require('../utils/knowledgeRetriever')
 const {
@@ -168,6 +169,10 @@ function computeFromBirth(birth) {
   // birthPlace / longitude 透传给排盘：两者都不给就不做真太阳时校正（默认关闭）
   const pp = paipan({ year, month, day, hour, minute, gender, birthPlace, longitude }) // 内部已做边界校验
   const mingju = analyzeMingju(pp)
+  // 神煞挂到 mingju 上，而不是另开一个参数：basic/deep/four-school 三条路径
+  // 都经过 formatMingliFacts(mingju)，挂在这里中英文六个提示词一次全通，
+  // 不用改六处函数签名。老调用方不传也不会炸（该字段缺省则整块不渲染）。
+  mingju.shenSha = analyzeShenSha(pp)
   const baziStr = [pp.yearPillar, pp.monthPillar, pp.dayPillar, pp.hourPillar]
     .map((p) => p.gan + p.zhi)
     .join(' ')
@@ -463,6 +468,42 @@ function buildCheckupLabelsEn(pp, m) {
 }
 
 /**
+ * 神煞展示块。中文直接用算法侧取值，英文全部走 baziTerms 译表。
+ *
+ * 注意保持「新增字段而非替换原字段」：list[].name 始终是中文原名，
+ * 英文放在 nameEn。小程序绑的是 name，改键名会直接把它打断。
+ */
+function buildShenShaView(shenSha, lang) {
+  if (!shenSha) return null
+  const en = lang === 'en'
+  // 英文侧干支要走译表。ganZhi 字段留中文原值给中文端与索引用，
+  // 英文读者看的是 ganZhiEn —— 直接把「癸丑」塞进英文页面等于没翻译。
+  const gz = (p) => p.gan + p.zhi
+  const palace = (p, key, zhLabel) => ({
+    ganZhi: gz(p),
+    ganZhiEn: T.pillar(gz(p)),
+    label: en ? T.PALACE[key] : zhLabel
+  })
+  return {
+    mingGong: palace(shenSha.mingGong, 'mingGong', '命宫'),
+    shenGong: palace(shenSha.shenGong, 'shenGong', '身宫'),
+    kongWang: shenSha.kongWang,
+    kongWangEn: shenSha.kongWang.map(T.zhi),
+    list: shenSha.list.map((s) => ({
+      name: s.name,
+      nameEn: T.shenSha(s.name),
+      category: s.category,
+      pillars: s.pillars,
+      pillarLabels: en ? s.pillars.map(T.pillarName) : s.pillarLabels,
+      meaning: en ? T.shenSha(s.name) : s.meaning
+    })),
+    note: en
+      ? 'Symbolic stars are secondary colour only — never a basis for prediction.'
+      : shenSha.note
+  }
+}
+
+/**
  * 真太阳时展示块。没启用校正时返回 null（默认关闭，不打扰）。
  *
  * 启用时额外算一遍**未校正**的盘做对比：校正是否真的改了四柱，是
@@ -566,6 +607,9 @@ router.post('/checkup', antiBrush({ dim: 'analysis.checkup', max: 120 }), async 
         geju: m.geju,
         oneLiner: lang === 'en' ? buildOneLinerEn(pp, m) : buildOneLiner(pp, m),
         currentDaYun,
+        // 免费档就给神煞与命宫身宫：这是「我们算得比别家全」的直观证据，
+        // 而且它是纯查表，不花 AI token
+        shenSha: buildShenShaView(m.shenSha, lang),
         trueSolarTime: buildTrueSolarTimeView(pp, birth, lang),
         disclaimer: lang === 'en' ? DISCLAIMER_EN : m.disclaimer,
         // 仅 en 时附带；zh 走原字段，小程序不受影响
