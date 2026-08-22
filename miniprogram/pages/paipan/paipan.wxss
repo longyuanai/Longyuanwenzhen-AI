@@ -58,6 +58,24 @@
   margin-left: 8rpx;
 }
 
+/* 选填标记：与必填的红星区分开，避免用户以为出生地也是必填 */
+.optional {
+  font-size: 24rpx;
+  color: #999;
+  margin-left: 12rpx;
+  padding: 2rpx 12rpx;
+  background: #f0f0f0;
+  border-radius: 16rpx;
+}
+
+/* 字段下方的解释文案 */
+.field-hint {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #999;
+}
+
 /* 选择器 */
 .picker {
   display: flex;

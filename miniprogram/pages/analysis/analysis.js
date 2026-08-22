@@ -1,5 +1,12 @@
 // pages/analysis/analysis.js - 命理解读页面
+//
+// 请求约定（易踩坑，两条）：
+//   1. request.js 的 BASE_URL 已含 /api/v1，这里的 url 只写 /analysis/xxx，
+//      不要再带 /api/v1，否则会打到 /api/v1/api/v1/... 全部 404。
+//   2. 解读类接口收的是 birth 出生信息，后端据此自行排盘（服务端权威）；
+//      客户端算出的四柱/五行不作为入参，用 buildBirthPayload() 统一构造。
 const { request } = require('../../utils/request')
+const { buildBirthPayload } = require('../../utils/bazi')
 
 Page({
   data: {
@@ -40,19 +47,20 @@ Page({
 
     try {
       const result = this.data.result
-
-      // 构建八字字符串
-      const baziStr = `${result.yearPillar.gan}${result.yearPillar.zhi}年 ${result.monthPillar.gan}${result.monthPillar.zhi}月 ${result.dayPillar.gan}${result.dayPillar.zhi}日 ${result.hourPillar.gan}${result.hourPillar.zhi}时`
+      const birth = buildBirthPayload(result)
+      if (!birth) {
+        // 出生信息不全，后端无法排盘，直接走本地降级
+        this.generateLocalAnalysis()
+        return
+      }
 
       // 请求后端API
       const res = await request({
-        url: '/api/v1/analysis/basic',
+        url: '/analysis/basic',
         method: 'POST',
         data: {
           baziId: result.baziId || `local_${Date.now()}`,
-          bazi: baziStr,
-          dayGan: result.dayPillar.gan,
-          wuxing: result.wuxing
+          birth: birth
         }
       })
 
@@ -123,20 +131,20 @@ ${result.daYun.isForward ? '大运顺行' : '大运逆行'}，起运年龄约${r
 
     try {
       const result = this.data.result
-
-      // 构建八字字符串
-      const baziStr = `${result.yearPillar.gan}${result.yearPillar.zhi}年 ${result.monthPillar.gan}${result.monthPillar.zhi}月 ${result.dayPillar.gan}${result.dayPillar.zhi}日 ${result.hourPillar.gan}${result.hourPillar.zhi}时`
+      const birth = buildBirthPayload(result)
+      if (!birth) {
+        wx.showToast({ title: '出生信息不完整，请重新排盘', icon: 'none' })
+        this.setData({ isLoading: false, activeTab: 'basic' })
+        return
+      }
 
       // 请求深度报告
       const res = await request({
-        url: '/api/v1/analysis/deep',
+        url: '/analysis/deep',
         method: 'POST',
         data: {
           baziId: result.baziId || `local_${Date.now()}`,
-          bazi: baziStr,
-          dayGan: result.dayPillar.gan,
-          wuxing: result.wuxing,
-          dayun: result.daYun
+          birth: birth
         }
       })
 
@@ -164,19 +172,18 @@ ${result.daYun.isForward ? '大运顺行' : '大运逆行'}，起运年龄约${r
     this.setData({ showPayModal: false })
 
     try {
-      // 创建订单
+      // 创建订单（金额由服务端价格表决定，客户端不传 amount —— 传了也会被忽略）
       const orderRes = await request({
-        url: '/api/v1/order/create',
+        url: '/order/create',
         method: 'POST',
         data: {
-          productType: 'deep_report',
-          amount: 99.00
+          productType: 'deep_report'
         }
       })
 
       // 获取支付参数
       const payRes = await request({
-        url: `/api/v1/order/${orderRes.orderId}/pay`,
+        url: `/order/${orderRes.orderId}/pay`,
         method: 'POST'
       })
 
@@ -189,19 +196,19 @@ ${result.daYun.isForward ? '大运顺行' : '大运逆行'}，起运年龄约${r
         paySign: payRes.paySign
       })
 
-      // 支付成功
+      // 轮询订单状态。注意 /confirm 是只读查询：客户端无权把订单置为已支付，
+      // paid 只能由微信异步回调验签后写入，所以这里等回调落库再解锁。
+      const paid = await this.pollOrderPaid(orderRes.orderId)
+      if (!paid) {
+        wx.showToast({ title: '支付确认中，稍后可在「我的」查看', icon: 'none' })
+        return
+      }
+
       wx.showToast({
         title: '支付成功',
         icon: 'success'
       })
-
       this.setData({ isPaid: true })
-
-      // 确认支付
-      await request({
-        url: `/api/v1/order/${orderRes.orderId}/confirm`,
-        method: 'POST'
-      })
 
       // 加载深度报告
       this.switchToDeep()
@@ -214,6 +221,27 @@ ${result.daYun.isForward ? '大运顺行' : '大运逆行'}，起运年龄约${r
         })
       }
     }
+  },
+
+  // 轮询订单是否已支付（微信回调是异步的，下单成功 ≠ 立即 paid）
+  // 最多 attempts 次、每次间隔 intervalMs，任一次拿到 paid 即返回 true
+  async pollOrderPaid(orderId, { attempts = 5, intervalMs = 1200 } = {}) {
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const res = await request({
+          url: `/order/${orderId}/confirm`,
+          method: 'POST',
+          showLoading: i === 0
+        })
+        if (res && res.status === 'paid') return true
+      } catch (err) {
+        console.error('查询订单状态失败:', err)
+      }
+      if (i < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, intervalMs))
+      }
+    }
+    return false
   },
 
   // 跳转到四家并列解读页(产品差异化卖点)
@@ -233,8 +261,10 @@ ${result.daYun.isForward ? '大运顺行' : '大运逆行'}，起运年龄约${r
     const result = this.data.result
     return {
       title: `八字命理解读 - ${result.dayPillar.gan}${result.dayPillar.zhi}日主`,
-      path: '/pages/index/index',
-      imageUrl: '/assets/images/share.png'
+      path: '/pages/index/index'
+      // imageUrl 暂不指定：assets/images/share.svg 是设计稿，微信分享图只认
+      // png/jpg。补出 1200x630 的 share.png 后在此填 '/assets/images/share.png'，
+      // 未指定时微信自动截取页面上部，不会出现加载不到的空白图。
     }
   }
 })

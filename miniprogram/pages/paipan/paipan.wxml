@@ -61,6 +61,30 @@
         </label>
       </radio-group>
     </view>
+
+    <!-- 出生地（可选）：用于真太阳时校正。不选就按北京时间算，
+         与不加这个功能之前完全一致。 -->
+    <view class="form-item">
+      <view class="label">
+        <text class="label-text">出生地</text>
+        <text class="optional">选填</text>
+      </view>
+      <picker
+        mode="selector"
+        range="{{cityOptions}}"
+        value="{{cityIndex}}"
+        bindchange="onCityChange"
+      >
+        <view class="picker">
+          <text class="picker-value">{{cityOptions[cityIndex] || '不指定（按北京时间）'}}</text>
+          <text class="picker-arrow">></text>
+        </view>
+      </picker>
+      <view class="field-hint">
+        全国统一用北京时间，但太阳并不统一。填出生地可按当地真太阳时校正，
+        越往西差得越多（乌鲁木齐约 2 小时），可能直接改变时柱甚至日柱。
+      </view>
+    </view>
   </view>
 
   <!-- 说明 -->
@@ -69,7 +93,8 @@
     <view class="tip-content">
       <text>1. 请确保出生时间准确，时辰对排盘结果影响较大</text>
       <text>2. 如不确定具体时间，可选择相近时辰</text>
-      <text>3. 排盘结果仅供参考，请理性看待</text>
+      <text>3. 出生地为选填项，填了会按真太阳时校正，不填按北京时间</text>
+      <text>4. 排盘结果仅供参考，请理性看待</text>
     </view>
   </view>
 

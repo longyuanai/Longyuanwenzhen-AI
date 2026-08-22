@@ -20,22 +20,24 @@
   <view class="history-section card">
     <view class="section-header">
       <text class="section-title">排盘历史</text>
+      <text class="syncing-tip" wx:if="{{isSyncing}}">同步中…</text>
       <text class="clear-btn" bindtap="clearHistory" wx:if="{{historyList.length > 0}}">清除</text>
     </view>
 
+    <!-- 服务端与本地记录已在 js 里按出生信息合并去重，统一渲染 baziStr -->
     <view class="history-list" wx:if="{{historyList.length > 0}}">
-      <view class="history-item" wx:for="{{historyList}}" wx:key="id" bindtap="viewHistory" data-index="{{index}}">
+      <!-- 长按改备注名，区分「我自己」/「老王」 -->
+      <view class="history-item" wx:for="{{historyList}}" wx:key="key"
+            bindtap="viewHistory" bindlongpress="renameRecord" data-index="{{index}}">
         <view class="history-info">
+          <text class="history-label" wx:if="{{item.label}}">{{item.label}}</text>
           <text class="history-date">{{item.birthDate}} {{item.birthTime}}</text>
           <text class="history-gender">{{item.gender === 'male' ? '男' : '女'}}</text>
+          <text class="history-local-tag" wx:if="{{!item.fromServer}}">本机</text>
         </view>
-        <view class="history-bazi">
-          {{item.yearPillar.gan}}{{item.yearPillar.zhi}}年
-          {{item.monthPillar.gan}}{{item.monthPillar.zhi}}月
-          {{item.dayPillar.gan}}{{item.dayPillar.zhi}}日
-          {{item.hourPillar.gan}}{{item.hourPillar.zhi}}时
-        </view>
+        <view class="history-bazi">{{item.baziStr}}</view>
       </view>
+      <view class="history-hint">长按记录可起备注名</view>
     </view>
 
     <view class="empty-tip" wx:else>
@@ -43,11 +45,19 @@
     </view>
   </view>
 
+  <!-- 意见反馈：熟人内测期间的问题收口，docs/friend-test-runbook.md 引导用户走这里 -->
+  <view class="about-section card">
+    <view class="about-item feedback-item" bindtap="showFeedback">
+      <text class="about-label">意见反馈</text>
+      <text class="about-value feedback-arrow">复制微信号 ›</text>
+    </view>
+  </view>
+
   <!-- 关于 -->
   <view class="about-section card">
     <view class="about-item">
       <text class="about-label">版本</text>
-      <text class="about-value">v1.0.0</text>
+      <text class="about-value">{{appVersion}}</text>
     </view>
     <view class="about-item">
       <text class="about-label">说明</text>

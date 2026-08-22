@@ -80,3 +80,26 @@
   .contact-tt { font-size: 13px; color: var(--ink2); }
   .contact-wx { font-size: 16px; margin-top: 8px; }
   .contact-wx b { color: var(--accent); letter-spacing: 1px; }
+
+/* 语言切换：标题下方居中独立一行。
+   曾用 absolute 贴右上角，英文标题较宽时会被按钮压住。 */
+.lang-switch {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--ink2);
+  text-decoration: none;
+  border: 1px solid var(--ink2);
+  border-radius: 12px;
+  padding: 2px 12px;
+  letter-spacing: 0;
+}
+.lang-switch:active { opacity: .5; }
+
+/* 英文标题不用中文那套宽字距，否则一行放不下 */
+html[lang="en"] .title h1 { letter-spacing: 0; font-size: 20px; }
+html[lang="en"] .title p { letter-spacing: 0; }
+/* 英文藏干字数多，缩小以免撑破柱子 */
+html[lang="en"] .cang { font-size: 10px; line-height: 1.35; }
+/* 五行名 18px 只够一个汉字，"Wood"/"Earth" 会压住进度条 */
+html[lang="en"] .bar .nm { width: 46px; font-size: 12px; }

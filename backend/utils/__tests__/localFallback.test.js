@@ -115,3 +115,24 @@ describe('localFallback - 与 promptBuilder 的基本事实一致性', () => {
     expect(deepS).toContain(basis)
   })
 })
+
+describe('五行分值格式化', () => {
+  // 回归：曾直接 JSON.stringify(wuxingScore)，把浮点噪声原样吐给用户
+  // （「火:15.599999999999998」），且大括号引号出现在正文里。
+  const { paipan } = require('../bazi')
+  const { analyzeMingju } = require('../mingju')
+  const pp = paipan({ year: 2002, month: 11, day: 20, hour: 10, minute: 0, gender: 'male' })
+  const mingju = analyzeMingju(pp)
+  const baziStr = '壬午 辛亥 壬辰 乙巳'
+
+  test('不出现原始 JSON 与超长小数', () => {
+    const out = buildBasicFallback({ baziStr, mingju })
+    expect(out).not.toMatch(/\{"[木火土金水]"/)
+    expect(out).not.toMatch(/\d\.\d{4,}/)
+  })
+
+  test('分值保留一位小数，可读', () => {
+    const out = buildBasicFallback({ baziStr, mingju })
+    expect(out).toMatch(/五行分值:.*木 \d+\.\d/)
+  })
+})

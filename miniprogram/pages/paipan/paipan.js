@@ -1,5 +1,7 @@
 // pages/paipan/paipan.js
 const bazi = require('../../utils/bazi')
+const { CITY_LONGITUDE } = require('../../utils/trueSolarTime')
+const { request } = require('../../utils/request')
 const { saveBaziRecord } = require('../../utils/util')
 
 Page({
@@ -24,6 +26,12 @@ Page({
       { label: '女', value: 'female' }
     ],
 
+    // 出生地（可选）。不选则不做真太阳时校正 —— 默认关闭，
+    // 与后端一致：历史记录里没有出生地，静默启用会改掉用户看过的盘。
+    cityOptions: [],       // 第 0 项是「不指定」
+    cityIndex: 0,
+    birthPlace: '',
+
     // 加载状态
     isLoading: false
   },
@@ -33,7 +41,24 @@ Page({
     const today = new Date()
     this.setData({
       birthDate: this.formatDate(today),
-      currentDate: today.getTime()
+      currentDate: today.getTime(),
+      cityOptions: this.buildCityOptions()
+    })
+  },
+
+  // 城市列表取自 utils/trueSolarTime.js（后端生成物），
+  // 不在页面里另存一份，免得与算法侧的表对不上。
+  buildCityOptions() {
+    const names = Object.keys(CITY_LONGITUDE).sort((a, b) => a.localeCompare(b, 'zh'))
+    return ['不指定（按北京时间）'].concat(names)
+  },
+
+  onCityChange(e) {
+    const index = Number(e.detail.value)
+    this.setData({
+      cityIndex: index,
+      // 第 0 项是「不指定」，对应空出生地 = 不校正
+      birthPlace: index > 0 ? this.data.cityOptions[index] : ''
     })
   },
 
@@ -96,7 +121,15 @@ Page({
   },
 
   // 开始排盘
-  startPaipan() {
+  //
+  // 排盘权威在后端：/bazi/paipan 基于 lunar-javascript，节气分月、立春分年、
+  // 晚子时、起运年龄与顺逆全部按真实节气推算。本地 utils/bazi.js 是简化实现
+  // （起运年龄写死 1 岁，大运年龄区间会整体偏移若干年），只在后端不可达时兜底，
+  // 并在结果里打 isLocalFallback 标记，让结果页能提示用户。
+  //
+  // 这一点很重要：解读接口同样由后端重新排盘，若展示用本地盘、解读用服务端盘，
+  // 用户会看到「盘是这个、解读讲的是另一个」。
+  async startPaipan() {
     if (!this.validateForm()) {
       return
     }
@@ -104,18 +137,7 @@ Page({
     this.setData({ isLoading: true })
 
     try {
-      // 解析日期
-      const [year, month, day] = this.data.birthDate.split('-').map(Number)
-      const hour = this.data.currentHour
-
-      // 执行排盘
-      const result = bazi.paipan({
-        year: year,
-        month: month,
-        day: day,
-        hour: hour,
-        gender: this.data.gender
-      })
+      const result = await this.requestPaipan()
 
       // 添加额外信息
       result.birthDate = this.data.birthDate
@@ -136,7 +158,7 @@ Page({
     } catch (err) {
       console.error('排盘失败:', err)
       wx.showToast({
-        title: '排盘失败，请重试',
+        title: (err && err.message) || '排盘失败，请重试',
         icon: 'none'
       })
     } finally {
@@ -144,12 +166,55 @@ Page({
     }
   },
 
+  // 优先服务端排盘，网络不可达时降级本地算法
+  async requestPaipan() {
+    try {
+      const res = await request({
+        url: '/bazi/paipan',
+        method: 'POST',
+        loadingText: '排盘中...',
+        data: {
+          birthDate: this.data.birthDate,
+          birthTime: this.data.birthTime,
+          gender: this.data.gender,
+          // 空串表示不指定；后端对空值按「不校正」处理
+          birthPlace: this.data.birthPlace || undefined
+        }
+      })
+      return res
+    } catch (err) {
+      // 后端明确判定输入不合法（如超出 1900-2100）时不该兜底：
+      // 本地算法只会算出一个同样无效的盘，反而掩盖问题，直接把错误抛给用户。
+      if (err && err.code === 400) {
+        throw new Error(err.message || '出生信息不在支持范围内')
+      }
+
+      console.warn('服务端排盘不可用，降级本地算法:', err)
+      const [year, month, day] = this.data.birthDate.split('-').map(Number)
+      const result = bazi.paipan({
+        year: year,
+        month: month,
+        day: day,
+        hour: this.data.currentHour,
+        // 分钟要带上：立春交年的交接精确到分钟，起运年龄也按分钟推。
+        // 写死 0 会让兜底盘与服务端盘在边界样本上不一致。
+        minute: this.data.currentMinute || 0,
+        gender: this.data.gender,
+        birthPlace: this.data.birthPlace || undefined
+      })
+      result.isLocalFallback = true
+      return result
+    }
+  },
+
   // 分享
   onShareAppMessage() {
     return {
       title: '智能八字排盘 - 专业的命理分析工具',
-      path: '/pages/index/index',
-      imageUrl: '/assets/images/share.png'
+      path: '/pages/index/index'
+      // imageUrl 暂不指定：assets/images/share.svg 是设计稿，微信分享图只认
+      // png/jpg。补出 1200x630 的 share.png 后在此填 '/assets/images/share.png'，
+      // 未指定时微信自动截取页面上部，不会出现加载不到的空白图。
     }
   }
 })

@@ -1,4 +1,6 @@
 // app.js
+const appConfig = require('./config')
+
 App({
   globalData: {
     userInfo: null,
@@ -7,8 +9,22 @@ App({
   },
 
   onLaunch() {
+    // 配置自检：API 地址、客服微信号这类值漏改不会让任何测试变红，
+    // 只会在熟人真机上表现为"打不通接口"或"加不到客服"。启动时喊一嗓子。
+    this.checkConfig()
     // 检查登录状态
     this.checkLoginStatus()
+  },
+
+  // 只告警不阻断：本机开发时这些值本来就是占位的，拦住反而碍事
+  checkConfig() {
+    const issues = appConfig.checkConfig()
+    if (!issues.length) return
+    console.warn(
+      '[配置自检] 发现 ' + issues.length + ' 项待处理（本机开发可忽略，真机/上线前必须解决）：'
+    )
+    issues.forEach((msg, i) => console.warn(`  ${i + 1}. ${msg}`))
+    console.warn('  → 全部改在 miniprogram/config.js，文件末尾有上线检查清单')
   },
 
   // 检查登录状态

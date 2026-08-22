@@ -7,6 +7,9 @@ const config = require('../config')
 const logger = require('../utils/logger')
 const { authRequired } = require('../middleware/auth')
 
+// 微信开放接口超时（毫秒）。宁可快速失败让用户重试，也不要挂着不返回。
+const WX_HTTP_TIMEOUT_MS = 5000
+
 const router = new Router()
 
 /**
@@ -28,8 +31,11 @@ router.post('/wx-login', async (ctx) => {
       return
     }
 
-    // 调用微信接口获取openid和session_key
+    // 调用微信接口换取 openid。
+    // 必须显式设 timeout：axios 默认 timeout=0（永不超时），微信接口一旦不通
+    // 就会一直挂在 TCP 上，把登录请求拖成假死（与 analysis.js 的 AI 网关同类问题）。
     const wxResponse = await axios.get('https://api.weixin.qq.com/sns/jscode2session', {
+      timeout: WX_HTTP_TIMEOUT_MS,
       params: {
         appid: config.weixin.appId,
         secret: config.weixin.appSecret,
@@ -38,9 +44,14 @@ router.post('/wx-login', async (ctx) => {
       }
     })
 
-    const { openid, session_key, unionid } = wxResponse.data
+    // session_key 是解密手机号等敏感信息用的，当前没有该功能，故不接收也不落库
+    // （存了反而是无谓的泄露面）。需要时再从这里取。
+    const { openid, unionid, errcode, errmsg } = wxResponse.data
 
     if (!openid) {
+      // 把微信侧错误码记进日志，否则「登录失败」四个字排查不动
+      // （40013=appid 无效，40125=secret 无效，40029=code 无效或已用过）
+      logger.warn(`微信 jscode2session 未返回 openid: errcode=${errcode} errmsg=${errmsg}`)
       ctx.status = 400
       ctx.body = {
         code: 400,
@@ -58,11 +69,13 @@ router.post('/wx-login', async (ctx) => {
       unionid: unionid
     })
 
-    // 生成JWT令牌
+    // 生成JWT令牌。role 取库里的值（默认 user），middleware/access.js 据此
+    // 做角色门槛与 admin 绕过 —— 不带 role 的话那些分支永远走不到。
     const token = jwt.sign(
       {
         userId: user._id,
-        openid: user.openid
+        openid: user.openid,
+        role: user.role || 'user'
       },
       config.jwt.secret,
       { expiresIn: config.jwt.expiresIn }

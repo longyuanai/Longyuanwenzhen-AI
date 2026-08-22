@@ -1,5 +1,19 @@
 <!--pages/result/result.wxml-->
 <view class="container" wx:if="{{result}}">
+  <!-- 降级提示：服务端排盘不可达时用了本地简化算法，起运年龄与大运区间会有偏差 -->
+  <view class="fallback-tip" wx:if="{{isLocalFallback}}">
+    当前为离线排盘结果，起运年龄与大运区间可能有偏差，联网后重新排盘可获得精确结果。
+  </view>
+
+  <!-- 真太阳时：填了出生地才出现。跨日时要说清楚，否则用户会以为日柱算错了 -->
+  <view class="tst-tip" wx:if="{{trueSolarTime}}">
+    <text class="tst-title">已按 {{trueSolarTime.place}} 真太阳时校正 {{trueSolarTime.offsetText}}</text>
+    <text class="tst-detail">实际用于排盘的时刻：{{trueSolarTime.solarTimeText}}</text>
+    <text class="tst-detail" wx:if="{{trueSolarTime.crossedDay}}">
+      校正后跨越了日界，日柱与时柱均随之改变。
+    </text>
+  </view>
+
   <!-- 基本信息 -->
   <view class="info-section card">
     <view class="info-row">
@@ -77,6 +91,54 @@
         <view class="dayun-age">{{item.ageRange}}</view>
       </view>
     </view>
+  </view>
+
+  <!-- 神煞与命宫身宫。老版本后端不返回该字段时整块不渲染 -->
+  <view class="shensha-section card" wx:if="{{shenSha}}">
+    <view class="section-title">神煞 · 命宫身宫</view>
+
+    <view class="palace-row">
+      <view class="palace-item">
+        <text class="palace-label">命宫</text>
+        <text class="palace-value">{{shenSha.mingGong}}</text>
+      </view>
+      <view class="palace-item">
+        <text class="palace-label">身宫</text>
+        <text class="palace-value">{{shenSha.shenGong}}</text>
+      </view>
+      <view class="palace-item">
+        <text class="palace-label">空亡</text>
+        <text class="palace-value">{{shenSha.kongWang}}</text>
+      </view>
+    </view>
+
+    <view class="ss-group" wx:if="{{shenSha.auspicious.length}}">
+      <view class="ss-group-title">吉神</view>
+      <view class="ss-item" wx:for="{{shenSha.auspicious}}" wx:key="name">
+        <view class="ss-head">
+          <text class="ss-name ss-name-good">{{item.name}}</text>
+          <text class="ss-pillars">{{item.pillarText}}</text>
+        </view>
+        <text class="ss-meaning">{{item.meaning}}</text>
+      </view>
+    </view>
+
+    <view class="ss-group" wx:if="{{shenSha.neutral.length}}">
+      <view class="ss-group-title">其他</view>
+      <view class="ss-item" wx:for="{{shenSha.neutral}}" wx:key="name">
+        <view class="ss-head">
+          <text class="ss-name">{{item.name}}</text>
+          <text class="ss-pillars">{{item.pillarText}}</text>
+        </view>
+        <text class="ss-meaning">{{item.meaning}}</text>
+      </view>
+    </view>
+
+    <view class="ss-empty" wx:if="{{!shenSha.auspicious.length && !shenSha.neutral.length}}">
+      本盘无显著神煞命中。
+    </view>
+
+    <view class="ss-note">{{shenSha.note}}</view>
   </view>
 
   <!-- 操作按钮 -->

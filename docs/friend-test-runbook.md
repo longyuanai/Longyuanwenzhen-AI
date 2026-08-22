@@ -11,24 +11,44 @@
 
 ## 1. 启动(每天开测前)
 
-按顺序起 3 个服务,顺序不可换(Mongo 不起则后端拒连,LightRAG 不起则 RAG 引证空)。
+### 方式 A:docker compose(推荐,一条命令起全套)
 
 ```bash
-# 1.1 MongoDB(守护进程,挂掉自动重启)
-docker run -d --name bazi-mongo --restart unless-stopped -p 27017:27017 mongo:7
+cp backend/.env.example backend/.env
+# 编辑 backend/.env:填 WX_APPID / WX_SECRET / OPENAI_API_KEY / JWT_SECRET
 
-# 1.2 LightRAG server + 灌 merged.json 索引(首次 5-10min,二次秒级)
-cd bazi-skill-dist
-OPENAI_API_KEY=sk-xxx bash scripts/serve-lightrag.sh
-# 脚本会:docker pull → 起容器 → 等 /health → inject_kg.py 灌 45895 entities + 108184 relations
-# Windows: set OPENAI_API_KEY=sk-xxx && scripts\serve-lightrag.bat
-
-# 1.3 Koa 后端
-cd ../backend
-npm install              # 第一次或依赖变了
-npm run dev              # nodemon 监听代码
-# 或生产: npm start
+docker compose up -d                              # Mongo + Redis + 后端
+docker compose exec backend npm run preflight     # 配置自检,见下节
 ```
+
+compose 里配了健康检查依赖:后端会等 Mongo 真能应答再起,
+不会在启动窗口里让订单接口返 503。
+
+LightRAG 不在 compose 里(镜像与灌索引流程独立且耗时),要古籍引证另起:
+```bash
+cd bazi-skill-dist && OPENAI_API_KEY=sk-xxx bash scripts/serve-lightrag.sh
+# 首次 5-10min 灌 45895 entities + 108184 relations,二次秒级
+# Windows: set OPENAI_API_KEY=sk-xxx && scripts\serve-lightrag.bat
+```
+
+### 方式 B:只用容器起依赖,后端在本机跑(改代码有热重载)
+
+```bash
+docker compose up -d mongo redis
+cd backend && npm install && npm run dev
+```
+
+### 先跑配置自检
+
+`npm run preflight` 会一次性检查:JWT 密钥强度、CORS 白名单、
+微信 appid/secret 是否还是占位值、支付密钥、AI 端点与模型、
+小程序侧的客服微信号与 API 地址、以及 Mongo/Redis/LightRAG 的连通性。
+
+分三级输出:`✗` 阻断(必须修)、`!` 警告(按场景判断)、`·` 信息。
+有阻断项时退出码为 1,可直接串进 CI 或启动脚本。
+
+`NODE_ENV=production npm run preflight` 会把更多项升级为阻断
+(比如 `ALLOWED_ORIGINS=*`、未配支付密钥、小程序 API 还指着 localhost)。
 
 **冒烟测试**(三个必须都过):
 ```bash
@@ -37,7 +57,9 @@ docker exec bazi-mongo mongosh --quiet --eval "db.runCommand({ping:1})"
 
 # 后端 + LightRAG 都通
 curl http://localhost:8080/health
-# 期望: {"status":"ok","lightrag":"up",...}
+# 期望: {"code":200,"message":"success","data":{"backend":"ok","lightrag":"up",...},...}
+# 注意 lightrag 为 "down" 时 /health 仍返 200 —— 这是刻意设计（RAG 挂了产品照常出解读，
+# 只是没古籍引证）。要判 LightRAG 是否在跑，看 data.lightrag 字段，不要看 HTTP 状态码。
 
 # RAG 引证命中
 curl -X POST http://localhost:8080/api/v1/analysis/checkup \
@@ -92,32 +114,30 @@ npm run seed:reset
 
 ## 4. 收问题(每天)
 
-1. **小程序侧**:看 `miniprogram/utils/request.js` 的 BASE_URL 指向 `http://localhost:8080`,熟人真机访问你电脑的 8080 端口需要:
+1. **小程序侧**:`miniprogram/config.js` 的 `API_HOST` 默认指向 `http://localhost:8080`,
+   熟人真机访问不到,需要改成下面二者之一(`npm run preflight` 会提示这一项):
    - **方案 A(最简单)**:你电脑 + 熟人手机在同一 WiFi,把 localhost 换成你电脑内网 IP,比如 `http://192.168.1.100:8080`
    - **方案 B**:用 frp / ngrok / Cloudflare Tunnel 暴露到公网,熟人扫码访问公网地址
-2. **后端侧**:熟人遇到 500/timeout,直接看 `backend/logs/` 最近日志;AI 超时 5s 走本地降级模板,这是预期行为。
+2. **后端侧**:熟人遇到 500/timeout,直接看 `backend/logs/` 最近日志(compose 已把日志映射到宿主机);
+   AI 超时 5s 走本地降级模板,这是预期行为。想看 AI 花了多少钱:`npm run usage:report`。
 3. **LightRAG 侧**:遇到 RAG 引证空(knowledgeRetriever refs.length === 0),`curl http://localhost:9621/health` 查是否还在,docker logs lightrag-bazi 看注入日志。
 4. **Mongo 侧**:遇到 401/403 异常,`docker exec bazi-mongo mongosh bazi --eval 'db.users.find().count()'` 查账号是否还在(可能被 reset 清过)。
 
 ## 5. 收摊(测试结束)
 
 ```bash
-# 5.1 停后端(ctrl-c 或 kill)
-# 5.2 停 LightRAG
+# 5.1 停后端 + Mongo + Redis(数据卷保留,下次 up 还在)
+docker compose down
+# 连数据一起删:docker compose down -v
+
+# 5.2 停 LightRAG(不在 compose 里,单独停)
 docker stop lightrag-bazi
-docker rm lightrag-bazi   # 不保留数据
-# 保留数据(留作复盘):docker stop lightrag-bazi(留着容器)
+docker rm lightrag-bazi   # 不保留数据;想留作复盘就只 stop 不 rm
 
-# 5.3 停 Mongo
-docker stop bazi-mongo    # 数据仍在 bazi-mongo 卷里
-docker rm bazi-mongo      # 不保留数据
-# 保留:docker stop bazi-mongo(留着容器)
+# 5.3 清账户(防熟人扫码还能登录)
+cd backend && npm run seed:reset
 
-# 5.4 清账户(防熟人扫码还能登录)
-cd backend
-npm run seed:reset
-
-# 5.5 清 .env 里的 OPENAI_API_KEY(避免泄露)
+# 5.4 清 .env 里的 OPENAI_API_KEY(避免泄露)
 ```
 
 ## 已知坑
@@ -125,12 +145,16 @@ npm run seed:reset
 - **测试号有 100 白名单上限**:50 熟人 + 自测 + 家人预留白名单,刚好够。
 - **AI 网关超时 5s**:后端自动降级到本地模板(标注「本地解读模板」),这是预期行为,不是 bug。
 - **LightRAG 重启丢缓存**:docker restart lightrag-bazi 后 vdb 重建要 1-3 分钟,这期间 /four-school 引证为空是正常的。
-- **Mongo 挂了后端直接拒连**:没有兜底 Mongo,但 entitlementRegistry 有 in-memory 兜底,所以即便 Mongo down,seed 过的账号还能用(直到后端重启)。
+- **Mongo 挂了订单接口立刻返 503**(不再靠 mongoose 缓冲干等 10s)。但 entitlementRegistry 有 in-memory 兜底,所以即便 Mongo down,seed 过的账号仍能看解读(直到后端重启)。
 - **生成账号后必须重启后端**:`grantVip` 写的是内存 + Mongo,内存是 process-local;后端重启时从 Mongo 重新加载,所以 VIP 不会丢。
 
 ## 反馈收集
 
-让熟人在小程序「我的 → 意见反馈」发消息;每周汇总到 `.codeartsdoer/specs/bazi_miniprogram/feedback/`。
+小程序「我的 → 意见反馈」弹出客服微信号供复制(`pages/profile/profile.js` 的
+`CONTACT_WECHAT`,**开测前必须改成你自己的微信号**,当前是占位值 `bazi-help-2026`)。
+熟人加微信反馈,每周汇总到 `.codeartsdoer/specs/bazi_miniprogram/feedback/`。
+
+没做站内工单系统:50 人量级用微信收口成本最低,且能追问细节。
 
 ## 退出条件
 

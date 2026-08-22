@@ -89,18 +89,44 @@
 
 .history-info {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 12rpx;
   margin-bottom: 12rpx;
 }
 
+/* 日期占左侧，性别与来源标签靠右成组 */
 .history-date {
   font-size: 26rpx;
   color: #666;
+  margin-right: auto;
+}
+
+/* 有备注名时由它领头，日期跟随其后 */
+.history-label + .history-date {
+  margin-right: auto;
 }
 
 .history-gender {
   font-size: 26rpx;
   color: #999;
+}
+
+/* 仅存在于本机的记录（匿名时排的盘 / 离线兜底），登录同步后不再出现 */
+.history-local-tag {
+  font-size: 22rpx;
+  color: #ad6800;
+  background: #fff7e6;
+  border: 2rpx solid #ffd591;
+  border-radius: 6rpx;
+  padding: 0 10rpx;
+  line-height: 32rpx;
+}
+
+.syncing-tip {
+  font-size: 24rpx;
+  color: #999;
+  margin-left: auto;
+  margin-right: 20rpx;
 }
 
 .history-bazi {
@@ -143,4 +169,27 @@
 .about-value {
   font-size: 28rpx;
   color: #333;
+}
+
+/* 备注名：区分多张盘（"我自己" / "老王"），排在日期前面 */
+.history-label {
+  font-size: 26rpx;
+  color: #4A90E2;
+  font-weight: 500;
+}
+
+.history-hint {
+  margin-top: 16rpx;
+  font-size: 22rpx;
+  color: #bbb;
+  text-align: center;
+}
+
+/* 意见反馈：可点条目，箭头提示可交互 */
+.feedback-item {
+  align-items: center;
+}
+
+.feedback-arrow {
+  color: #4A90E2;
 }

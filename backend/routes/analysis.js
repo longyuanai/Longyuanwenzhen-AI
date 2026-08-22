@@ -11,6 +11,7 @@ const { antiBrush, quotaGuard } = require('../middleware/access')
 const sentry = require('../utils/sentry')
 const { paipan } = require('../utils/bazi')
 const { analyzeMingju } = require('../utils/mingju')
+const { analyzeShenSha } = require('../utils/shensha')
 const { buildBasicPrompt, buildDeepPrompt, validateAiOutput, formatKnowledgeContext } = require('../utils/promptBuilder')
 const { retrieve } = require('../utils/knowledgeRetriever')
 const {
@@ -18,6 +19,8 @@ const {
   buildFourSchoolQueries
 } = require('../utils/fourSchoolPrompt')
 const { buildOneLiner } = require('../utils/checkupSummary')
+const { buildOneLinerEn, DISCLAIMER_EN } = require('../utils/checkupSummary.en')
+const T = require('../utils/i18n/baziTerms')
 const { analyzeDayunSegment, analyzeDayunFull, currentDayun } = require('../utils/dayun')
 const {
   buildDayunSegmentPrompt,
@@ -30,10 +33,73 @@ const {
   buildDayunSegmentFallback,
   buildDayunFullFallback
 } = require('../utils/localFallback')
+const {
+  buildBasicPromptEn,
+  buildDeepPromptEn,
+  validateAiOutputEn
+} = require('../utils/promptBuilder.en')
+const { buildFourSchoolPromptEn } = require('../utils/fourSchoolPrompt.en')
+const {
+  buildDayunSegmentPromptEn,
+  buildDayunFullPromptEn
+} = require('../utils/dayunPrompt.en')
+const {
+  buildBasicFallbackEn,
+  buildDeepFallbackEn,
+  buildFourSchoolFallbackEn,
+  buildDayunSegmentFallbackEn,
+  buildDayunFullFallbackEn
+} = require('../utils/localFallback.en')
+const aiUsage = require('../utils/aiUsage')
 const reg = require('../utils/entitlementRegistry')
 const { Lunar } = require('lunar-javascript')
 
 const AI_HTTP_TIMEOUT_MS = 5000
+
+// 输出语言。只认 'zh' / 'en'，其余一律回落中文 —— 不认识的 lang 值
+// 应该给出可用内容，而不是报错或吐出半英半中。
+const SUPPORTED_LANGS = ['zh', 'en']
+const DEFAULT_LANG = 'zh'
+
+function resolveLang(raw) {
+  const v = String(raw || '').trim().toLowerCase()
+  if (SUPPORTED_LANGS.includes(v)) return v
+  // 容忍 'en-US' / 'zh-CN' 这类带地区码的写法
+  const base = v.split('-')[0]
+  return SUPPORTED_LANGS.includes(base) ? base : DEFAULT_LANG
+}
+
+// 语言 → 提示词与降级模板构造器。集中在一处，新增语言只改这张表。
+const BUILDERS = {
+  zh: {
+    basic: buildBasicPrompt,
+    deep: buildDeepPrompt,
+    fourSchool: buildFourSchoolPrompt,
+    dayunSegment: buildDayunSegmentPrompt,
+    dayunFull: buildDayunFullPrompt,
+    fallback: {
+      basic: buildBasicFallback,
+      deep: buildDeepFallback,
+      'four-school': buildFourSchoolFallback,
+      'dayun-segment': buildDayunSegmentFallback,
+      'dayun-full': buildDayunFullFallback
+    }
+  },
+  en: {
+    basic: buildBasicPromptEn,
+    deep: buildDeepPromptEn,
+    fourSchool: buildFourSchoolPromptEn,
+    dayunSegment: buildDayunSegmentPromptEn,
+    dayunFull: buildDayunFullPromptEn,
+    fallback: {
+      basic: buildBasicFallbackEn,
+      deep: buildDeepFallbackEn,
+      'four-school': buildFourSchoolFallbackEn,
+      'dayun-segment': buildDayunSegmentFallbackEn,
+      'dayun-full': buildDayunFullFallbackEn
+    }
+  }
+}
 
 const router = new Router()
 
@@ -99,9 +165,14 @@ function computeFromBirth(birth) {
     e.code = 'INVALID_INPUT'
     throw e
   }
-  const { year, month, day, hour, minute = 0, gender } = birth
-  const pp = paipan({ year, month, day, hour, minute, gender }) // 内部已做边界校验
+  const { year, month, day, hour, minute = 0, gender, birthPlace, longitude } = birth
+  // birthPlace / longitude 透传给排盘：两者都不给就不做真太阳时校正（默认关闭）
+  const pp = paipan({ year, month, day, hour, minute, gender, birthPlace, longitude }) // 内部已做边界校验
   const mingju = analyzeMingju(pp)
+  // 神煞挂到 mingju 上，而不是另开一个参数：basic/deep/four-school 三条路径
+  // 都经过 formatMingliFacts(mingju)，挂在这里中英文六个提示词一次全通，
+  // 不用改六处函数签名。老调用方不传也不会炸（该字段缺省则整块不渲染）。
+  mingju.shenSha = analyzeShenSha(pp)
   const baziStr = [pp.yearPillar, pp.monthPillar, pp.dayPillar, pp.hourPillar]
     .map((p) => p.gan + p.zhi)
     .join(' ')
@@ -120,15 +191,24 @@ function computeFromBirth(birth) {
  * @param {string} type     'basic' | 'deep' | 'four-school' | 'dayun-segment' | 'dayun-full'
  * @param {string} prompt   提示词
  * @param {object} computed { baziStr, dayunStr, mingju, [seg|fullList] } 供降级模板使用
+ * @param {string} [lang]   'zh' | 'en'，决定 system prompt 与降级模板语言
  */
-async function generateAnalysis(type, prompt, computed) {
+async function generateAnalysis(type, prompt, computed, lang = DEFAULT_LANG) {
+  const system = lang === 'en'
+    ? 'You are a professional BaZi (Four Pillars of Destiny) consultant. '
+      + 'Write in clear, natural English.'
+    : '你是一位专业的八字命理师，精通传统命理学。'
+
+  const model = config.ai.openai.model
+  const startedAt = Date.now()
+
   try {
     const response = await axios.post(
       `${config.ai.openai.baseUrl}/chat/completions`,
       {
-        model: config.ai.openai.model,
+        model,
         messages: [
-          { role: 'system', content: '你是一位专业的八字命理师，精通传统命理学。' },
+          { role: 'system', content: system },
           { role: 'user', content: prompt }
         ],
         temperature: 0.7,
@@ -143,16 +223,23 @@ async function generateAnalysis(type, prompt, computed) {
       }
     )
     const raw = response.data.choices[0].message.content
-    validateAiOutput(computed.mingju, raw, logger)
+    // 记录真实 token 消耗，供 scripts/ai-usage-report.js 算单位成本
+    aiUsage.record({
+      type, lang, model, usage: response.data.usage, ms: Date.now() - startedAt
+    })
+    // 日主一致性校验：两种语言各有实现，句式差异大，不能共用一套正则
+    if (lang === 'en') validateAiOutputEn(computed.mingju, raw, logger)
+    else validateAiOutput(computed.mingju, raw, logger)
     return raw
   } catch (err) {
-    logger.warn(`AI生成失败(${type}), 降级到本地模板:`, err.message)
-    if (type === 'basic') return buildBasicFallback(computed)
-    if (type === 'deep') return buildDeepFallback(computed)
-    if (type === 'four-school') return buildFourSchoolFallback(computed)
-    if (type === 'dayun-segment') return buildDayunSegmentFallback(computed)
-    if (type === 'dayun-full') return buildDayunFullFallback(computed)
-    return '命理解读生成中，请稍后再试。'
+    // 降级也记一笔：降级率是判断 AI 网关是否稳定的关键指标
+    aiUsage.record({ type, lang, model, ms: Date.now() - startedAt, fallback: true })
+    logger.warn(`AI生成失败(${type}/${lang}), 降级到本地模板:`, err.message)
+    const build = (BUILDERS[lang] || BUILDERS[DEFAULT_LANG]).fallback[type]
+    if (build) return build(computed)
+    return lang === 'en'
+      ? 'The reading is being generated. Please try again shortly.'
+      : '命理解读生成中，请稍后再试。'
   }
 }
 
@@ -169,6 +256,7 @@ function badRequest(ctx, message) {
 router.post('/basic', antiBrush({ dim: 'analysis.basic', max: 60 }), async (ctx) => {
   try {
     const { baziId, birth } = ctx.request.body
+    const lang = resolveLang(ctx.request.body.lang)
     let computed
     try {
       computed = computeFromBirth(birth)
@@ -177,9 +265,9 @@ router.post('/basic', antiBrush({ dim: 'analysis.basic', max: 60 }), async (ctx)
       throw e
     }
 
-    const prompt = buildBasicPrompt(computed.baziStr, computed.mingju)
-    const content = await generateAnalysis('basic', prompt, computed)
-    logger.info(`生成基础解读: ${baziId}`)
+    const prompt = BUILDERS[lang].basic(computed.baziStr, computed.mingju)
+    const content = await generateAnalysis('basic', prompt, computed, lang)
+    logger.info(`生成基础解读: ${baziId} (${lang})`)
 
     ctx.body = {
       code: 200,
@@ -204,6 +292,7 @@ router.post('/deep', authRequired, quotaGuard({ dim: 'analysis.deep', max: 5 }),
   try {
     const { baziId, birth } = ctx.request.body
     const userId = ctx.state.user.userId
+    const lang = resolveLang(ctx.request.body.lang)
 
     // 付费校验：未付费禁止生成深度报告（spec 5.4.1 禁止项）
     const entitled = await hasDeepEntitlement(userId)
@@ -226,9 +315,9 @@ router.post('/deep', authRequired, quotaGuard({ dim: 'analysis.deep', max: 5 }),
       throw e
     }
 
-    const prompt = buildDeepPrompt(computed.baziStr, computed.dayunStr, computed.mingju)
-    const content = await generateAnalysis('deep', prompt, computed)
-    logger.info(`生成深度报告: ${baziId}, 用户: ${userId}`)
+    const prompt = BUILDERS[lang].deep(computed.baziStr, computed.dayunStr, computed.mingju)
+    const content = await generateAnalysis('deep', prompt, computed, lang)
+    logger.info(`生成深度报告: ${baziId}, 用户: ${userId} (${lang})`)
 
     ctx.body = {
       code: 200,
@@ -256,6 +345,7 @@ router.post('/four-school', authRequired, quotaGuard({ dim: 'analysis.four_schoo
   try {
     const { baziId, birth } = ctx.request.body
     const userId = ctx.state.user.userId
+    const lang = resolveLang(ctx.request.body.lang)
 
     const entitled = await hasFourSchoolEntitlement(userId)
     if (!entitled) {
@@ -288,13 +378,13 @@ router.post('/four-school', authRequired, quotaGuard({ dim: 'analysis.four_schoo
     ])
     const knowledgeBySchool = { xu: xuRefs, liang: liangRefs, yuan: yuanRefs, wei: weiRefs }
 
-    const prompt = buildFourSchoolPrompt(
+    const prompt = BUILDERS[lang].fourSchool(
       computed.baziStr,
       computed.dayunStr,
       computed.mingju,
       knowledgeBySchool
     )
-    const content = await generateAnalysis('four-school', prompt, computed)
+    const content = await generateAnalysis('four-school', prompt, computed, lang)
 
     // 暴露各家的古籍命中数,前端可展示「徐乐吾派(3 处引证)」
     const sources = {
@@ -333,9 +423,152 @@ router.post('/four-school', authRequired, quotaGuard({ dim: 'analysis.four_schoo
  * POST /api/v1/analysis/checkup
  * body: { birth: {year,month,day,hour,minute,gender,calendar?:'solar'|'lunar',isLeap?} }
  */
+// 体检结果的英文标签块。
+//
+// 刻意「新增 labels 而非替换原字段」：wuxingScore 的键是中文五行字符，
+// pillars 里也全是干支汉字，改键名会直接打断小程序。所以原样保留，
+// 另给一份英文渲染，前端按语言取。
+//
+// 术语一律走 utils/i18n/baziTerms.js —— 那张表已被测试锁死必须穷尽算法取值，
+// 前端各自再维护一份必然漏（英文降级模板就因此漏过 偏强/羊刃格）。
+function buildCheckupLabelsEn(pp, m) {
+  const els = {}
+  Object.keys(m.wuxingScore).forEach((e) => { els[e] = T.element(e) })
+
+  const pillarLabels = {}
+  ;['year', 'month', 'day', 'hour'].forEach((k) => {
+    const p = pp[k + 'Pillar']
+    pillarLabels[k] = {
+      name: { year: 'Year', month: 'Month', day: 'Day', hour: 'Hour' }[k],
+      pillar: T.pillar(p.gan + p.zhi),
+      gan: T.gan(p.gan),
+      zhi: T.zhi(p.zhi),
+      ganShen: T.tenGod(pp.tenGods[k + 'Gan']),
+      zhiShen: T.tenGod(pp.tenGods[k + 'Zhi']),
+      cang: (pp.cangGan[k] || []).map(T.gan)
+    }
+  })
+
+  const th = m.yongShen.tiaoHou
+  return {
+    dayMaster: T.gan(m.dayMaster.gan),
+    dayElement: T.element(m.dayMaster.element),
+    strength: T.strength(m.strength.label),
+    geju: T.geju(m.geju.name),
+    xiShen: (m.yongShen.xiShen || []).map(T.element),
+    jiShen: (m.yongShen.jiShen || []).map(T.element),
+    elements: els,
+    pillars: pillarLabels,
+    tiaoHou: {
+      season: T.season(th.season),
+      need: (th.need || []).map(T.element),
+      urgent: !!th.urgent
+    }
+  }
+}
+
+/**
+ * 神煞展示块。中文直接用算法侧取值，英文全部走 baziTerms 译表。
+ *
+ * 注意保持「新增字段而非替换原字段」：list[].name 始终是中文原名，
+ * 英文放在 nameEn。小程序绑的是 name，改键名会直接把它打断。
+ */
+function buildShenShaView(shenSha, lang) {
+  if (!shenSha) return null
+  const en = lang === 'en'
+  // 英文侧干支要走译表。ganZhi 字段留中文原值给中文端与索引用，
+  // 英文读者看的是 ganZhiEn —— 直接把「癸丑」塞进英文页面等于没翻译。
+  const gz = (p) => p.gan + p.zhi
+  const palace = (p, key, zhLabel) => ({
+    ganZhi: gz(p),
+    ganZhiEn: T.pillar(gz(p)),
+    label: en ? T.PALACE[key] : zhLabel
+  })
+  return {
+    mingGong: palace(shenSha.mingGong, 'mingGong', '命宫'),
+    shenGong: palace(shenSha.shenGong, 'shenGong', '身宫'),
+    kongWang: shenSha.kongWang,
+    kongWangEn: shenSha.kongWang.map(T.zhi),
+    list: shenSha.list.map((s) => ({
+      name: s.name,
+      nameEn: T.shenSha(s.name),
+      category: s.category,
+      pillars: s.pillars,
+      pillarLabels: en ? s.pillars.map(T.pillarName) : s.pillarLabels,
+      meaning: en ? T.shenSha(s.name) : s.meaning
+    })),
+    note: en
+      ? 'Symbolic stars are secondary colour only — never a basis for prediction.'
+      : shenSha.note
+  }
+}
+
+/**
+ * 真太阳时展示块。没启用校正时返回 null（默认关闭，不打扰）。
+ *
+ * 启用时额外算一遍**未校正**的盘做对比：校正是否真的改了四柱，是
+ * 「我们比别家算得准」这个卖点唯一能拿出来给用户看的实证。
+ * 排盘是纯函数且只需微秒级，多算一遍不心疼。
+ */
+function buildTrueSolarTimeView(pp, birth, lang) {
+  const t = pp.trueSolarTime
+  if (!t) return null
+
+  const gz = (r, k) => r[k + 'Pillar'].gan + r[k + 'Pillar'].zhi
+  const KEYS = ['year', 'month', 'day', 'hour']
+
+  let plain = null
+  try {
+    // 同一出生时刻、去掉出生地
+    plain = paipan({
+      year: birth.year, month: birth.month, day: birth.day,
+      hour: birth.hour, minute: birth.minute || 0, gender: birth.gender
+    })
+  } catch (e) {
+    // 未校正版可能超界（校正把日期拉回了范围内）。对比拿不到就不展示对比，
+    // 不能因为这个附加信息把整个体检打挂。
+    plain = null
+  }
+
+  const changedPillars = plain ? KEYS.filter((k) => gz(pp, k) !== gz(plain, k)) : []
+  const sign = t.offsetMinutes >= 0 ? '+' : '−'
+  const abs = Math.abs(t.offsetMinutes)
+
+  // 英文版一律用经度指代地点，不回落到中文城市名——城市表里存的是中文，
+  // 直接塞进英文句子会让英文正文混中文（项目里已有的规矩）。
+  // 给 122 个城市配一套罗马化表不值得，经度对英文读者反而更明确。
+  const zhWhere = t.place || `东经 ${t.longitude}°`
+  const enWhere = `${t.longitude}°E`
+
+  const summary = lang === 'en'
+    ? (changedPillars.length
+      ? `True solar time at ${enWhere} differs from clock time by ${sign}${abs} min, which changes ${changedPillars.length} of the four pillars.`
+      : `True solar time at ${enWhere} differs from clock time by ${sign}${abs} min; the four pillars are unaffected.`)
+    : (changedPillars.length
+      ? `按${zhWhere}的真太阳时校正 ${sign}${abs} 分钟，四柱中有 ${changedPillars.length} 柱因此改变。`
+      : `按${zhWhere}的真太阳时校正 ${sign}${abs} 分钟，未改变四柱。`)
+
+  return {
+    enabled: true,
+    place: t.place,
+    longitude: t.longitude,
+    offsetMinutes: t.offsetMinutes,
+    longitudeOffset: t.longitudeOffset,
+    equationOfTime: t.equationOfTime,
+    crossedDay: t.crossedDay,
+    clockTime: t.clockTime,
+    solarTime: t.solarTime,
+    // 哪些柱因校正而变——不校正就看不到的差异，这是付费转化的钩子
+    changedPillars,
+    comparable: plain !== null,
+    summary
+  }
+}
+
 router.post('/checkup', antiBrush({ dim: 'analysis.checkup', max: 120 }), async (ctx) => {
   try {
     let { birth } = ctx.request.body
+    const lang = resolveLang(ctx.request.body.lang)
     try {
       birth = normalizeBirthToSolar(birth)
     } catch (e) {
@@ -372,9 +605,15 @@ router.post('/checkup', antiBrush({ dim: 'analysis.checkup', max: 120 }), async 
         strength: m.strength,
         yongShen: m.yongShen,
         geju: m.geju,
-        oneLiner: buildOneLiner(pp, m),
+        oneLiner: lang === 'en' ? buildOneLinerEn(pp, m) : buildOneLiner(pp, m),
         currentDaYun,
-        disclaimer: m.disclaimer
+        // 免费档就给神煞与命宫身宫：这是「我们算得比别家全」的直观证据，
+        // 而且它是纯查表，不花 AI token
+        shenSha: buildShenShaView(m.shenSha, lang),
+        trueSolarTime: buildTrueSolarTimeView(pp, birth, lang),
+        disclaimer: lang === 'en' ? DISCLAIMER_EN : m.disclaimer,
+        // 仅 en 时附带；zh 走原字段，小程序不受影响
+        labels: lang === 'en' ? buildCheckupLabelsEn(pp, m) : undefined
       },
       timestamp: Date.now()
     }
@@ -395,6 +634,7 @@ router.post('/dayun-segment', authRequired, quotaGuard({ dim: 'analysis.dayun_se
   try {
     const { baziId, birth, segmentIndex } = ctx.request.body
     const userId = ctx.state.user.userId
+    const lang = resolveLang(ctx.request.body.lang)
 
     if (!Number.isInteger(segmentIndex) || segmentIndex < 0 || segmentIndex > 7) {
       return badRequest(ctx, 'segmentIndex 须为 0-7 的整数')
@@ -426,7 +666,7 @@ router.post('/dayun-segment', authRequired, quotaGuard({ dim: 'analysis.dayun_se
     const refs = await retrieve(computed.mingju, { query: `大运 ${seg.ganZhi} ${seg.leanText}` })
     const knowledgeContext = formatKnowledgeContext(refs)
 
-    const prompt = buildDayunSegmentPrompt(
+    const prompt = BUILDERS[lang].dayunSegment(
       computed.baziStr,
       computed.mingju,
       seg,
@@ -435,7 +675,7 @@ router.post('/dayun-segment', authRequired, quotaGuard({ dim: 'analysis.dayun_se
     const content = await generateAnalysis('dayun-segment', prompt, {
       ...computed,
       seg
-    })
+    }, lang)
 
     logger.info(`生成大运单段解读: ${baziId}, 段 ${segmentIndex}, 用户: ${userId}, refs ${refs.length}`)
 
@@ -470,6 +710,7 @@ router.post('/dayun-full', authRequired, quotaGuard({ dim: 'analysis.dayun_full'
   try {
     const { baziId, birth } = ctx.request.body
     const userId = ctx.state.user.userId
+    const lang = resolveLang(ctx.request.body.lang)
 
     const entitled = await hasDayunFullEntitlement(userId)
     if (!entitled) {
@@ -496,7 +737,7 @@ router.post('/dayun-full', authRequired, quotaGuard({ dim: 'analysis.dayun_full'
     const refs = await retrieve(computed.mingju, { query: '大运十年阶段 吉凶转折' })
     const knowledgeContext = formatKnowledgeContext(refs)
 
-    const prompt = buildDayunFullPrompt(
+    const prompt = BUILDERS[lang].dayunFull(
       computed.baziStr,
       computed.mingju,
       fullList,
@@ -505,7 +746,7 @@ router.post('/dayun-full', authRequired, quotaGuard({ dim: 'analysis.dayun_full'
     const content = await generateAnalysis('dayun-full', prompt, {
       ...computed,
       fullList
-    })
+    }, lang)
 
     logger.info(`生成大运全卷解读: ${baziId}, 用户: ${userId}, refs ${refs.length}`)
 

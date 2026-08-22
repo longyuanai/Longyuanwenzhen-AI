@@ -4,6 +4,7 @@
     "pages/paipan/paipan",
     "pages/result/result",
     "pages/analysis/analysis",
+    "pages/four-school/four-school",
     "pages/profile/profile"
   ],
   "window": {
@@ -22,14 +23,14 @@
       {
         "pagePath": "pages/index/index",
         "text": "首页",
-        "iconPath": "assets/images/home.svg",
-        "selectedIconPath": "assets/images/home-active.svg"
+        "iconPath": "assets/images/home.png",
+        "selectedIconPath": "assets/images/home-active.png"
       },
       {
         "pagePath": "pages/profile/profile",
         "text": "我的",
-        "iconPath": "assets/images/profile.svg",
-        "selectedIconPath": "assets/images/profile-active.svg"
+        "iconPath": "assets/images/profile.png",
+        "selectedIconPath": "assets/images/profile-active.png"
       }
     ]
   },
@@ -38,13 +39,5 @@
     "downloadFile": 10000
   },
   "debug": false,
-  "permission": {
-    "scope.userLocation": {
-      "desc": "用于获取出生地点信息"
-    }
-  },
-  "requiredPrivateInfos": [
-    "chooseLocation"
-  ],
   "sitemapLocation": "sitemap.json"
 }

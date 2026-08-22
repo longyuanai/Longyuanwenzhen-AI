@@ -32,7 +32,13 @@ async function authRequired(ctx, next) {
       ctx.body = envelope(401, '登录态无效')
       return
     }
-    ctx.state.user = { userId: String(payload.userId), openid: payload.openid }
+    // role 必须回填，否则 access.js 的 roleRequired / admin 绕过永远走不到。
+    // 只信任签发时写进 token 的角色，缺省一律降级为最低权限 'user'。
+    ctx.state.user = {
+      userId: String(payload.userId),
+      openid: payload.openid,
+      role: payload.role || 'user'
+    }
     await next()
   } catch (err) {
     ctx.status = 401
@@ -40,4 +46,30 @@ async function authRequired(ctx, next) {
   }
 }
 
-module.exports = { authRequired, extractToken }
+/**
+ * 可选鉴权：带了合法 token 就填充 ctx.state.user，没带或无效则静默放行。
+ *
+ * 用于「免登录可用、登录后有增强」的接口。典型是 /bazi/paipan：
+ * 匿名用户照常排盘，登录用户额外把结果存进历史记录。
+ * 绝不能因为 token 无效就拦掉免费功能，故这里不返 401。
+ */
+async function authOptional(ctx, next) {
+  const token = extractToken(ctx)
+  if (token) {
+    try {
+      const payload = jwt.verify(token, config.jwt.secret)
+      if (payload && payload.userId) {
+        ctx.state.user = {
+          userId: String(payload.userId),
+          openid: payload.openid,
+          role: payload.role || 'user'
+        }
+      }
+    } catch (err) {
+      // token 过期/伪造 → 当作匿名处理，不阻断
+    }
+  }
+  await next()
+}
+
+module.exports = { authRequired, authOptional, extractToken }

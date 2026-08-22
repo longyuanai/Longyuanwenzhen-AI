@@ -21,10 +21,12 @@
 │   │   ├── four-school/ # 四家并列解读页
 │   │   └── profile/     # 我的页面
 │   ├── utils/           # 工具函数
-│   │   ├── bazi.js      # 八字排盘核心算法
+│   │   ├── bazi.js      # 八字排盘（离线兜底；联网时以后端排盘为准）
+│   │   ├── solarTerms.js # 节气边界表(1899-2101，自动生成，勿手改)
 │   │   ├── request.js   # 网络请求封装
 │   │   └── util.js      # 通用工具函数
 │   ├── assets/          # 静态资源
+│   ├── config.js        # 集中配置(API 地址/客服微信号,含开测与上线检查清单)
 │   ├── app.js           # 小程序入口
 │   ├── app.json         # 小程序配置
 │   └── app.wxss         # 全局样式
@@ -207,20 +209,33 @@ npm start    # 生产模式
 ### 3. 配置说明
 
 #### 小程序配置
-修改 `miniprogram/utils/request.js` 中的 `BASE_URL`：
+所有需要按环境改的值都集中在 `miniprogram/config.js`，页面与工具层一律引用它，
+不要在别处写死（客服微信号曾在两个页面各写一份，漏改一处熟人就加不到人）。
+
 ```javascript
-const BASE_URL = 'https://your-domain.com/api/v1'
+const API_HOST = 'https://your-domain.com'   // 内测填内网 IP，上线填 https 域名
+const CONTACT_WECHAT = 'your-wechat-id'      // 付费开通与意见反馈都走这个号
 ```
+
+`app.js` 启动时会跑 `checkConfig()`，占位值未替换、API 指向 localhost、
+线上用 http 等情况都会在控制台告警（只提示不阻断，本机开发不受影响）。
+文件末尾附了开测与上线的完整检查清单。
 
 #### 后端配置
 编辑 `backend/.env` 文件：
 ```env
-# 微信小程序配置
+# 微信小程序配置(变量名以 backend/.env.example 为准)
 WX_APPID=your_appid
 WX_SECRET=your_secret
 
-# AI配置
+# 微信支付(不配 WXPAY_API_KEY 时 /order/callback 一律 503 拒绝,不会误判已支付)
+WXPAY_MCHID=your_mchid
+WXPAY_API_KEY=your_pay_api_key
+
+# AI配置(BASE_URL / MODEL 可选,用于切自建网关或换模型)
 OPENAI_API_KEY=your_api_key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4
 
 # 数据库配置
 MONGODB_URL=mongodb://localhost:27017/bazi
@@ -278,11 +293,17 @@ cd backend && npm run seed:friends:10
 - `GET /api/v1/user/profile` - 获取用户信息(鉴权)
 
 ### 排盘接口
-- `POST /api/v1/bazi/paipan` - 生成八字排盘(免费)
-- `GET /api/v1/bazi/history` - 查询排盘历史(鉴权)
+- `POST /api/v1/bazi/paipan` - 生成八字排盘(免费,免登录可用;带 token 则同时存入历史)
+- `GET /api/v1/bazi/history` - 查询排盘历史(鉴权;`?limit=` 1-100,默认 20)
+- `POST /api/v1/bazi/history/sync` - 批量同步本机排盘记录到云端(鉴权;登录后合并本地记录)
+- `PUT /api/v1/bazi/history/:id` - 修改记录备注名(鉴权)
+- `DELETE /api/v1/bazi/history` - 清空本人排盘历史(鉴权)
 
 ### 解读接口
 - `POST /api/v1/analysis/basic` - 基础解读(免费)
+
+> 所有 `/analysis/*` 接口都接受可选的 `lang` 字段(`zh` 默认 / `en`),
+> 决定提示词、AI 输出与降级模板的语言。非法值回落中文。
 - `POST /api/v1/analysis/deep` - 深度报告(鉴权 + 付费:deep_report / VIP)
 - `POST /api/v1/analysis/four-school` - 四家并列解读(鉴权 + 付费:four_school / VIP)
 - `POST /api/v1/analysis/dayun-segment` - 大运单段深度解读(鉴权 + 付费:dayun_segment 19.9 / VIP)

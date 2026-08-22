@@ -5,20 +5,30 @@ Page({
   data: {
     userInfo: null,
     hasUserInfo: false,
-    canIUseGetUserProfile: false,
-    isLoading: false
+    isLoading: false,
+    // 头像昵称填写：登录成功后才展示，且是可选项
+    showProfileFill: false,
+    // 头像昵称能力需基础库 2.21.2+；旧版微信上按钮点了没反应，
+    // 与其给个假入口，不如直接不渲染
+    canFillProfile: false,
+    draftAvatar: '',
+    draftNick: ''
   },
 
   onLoad() {
-    // 检查是否支持getUserProfile
-    if (wx.getUserProfile) {
-      this.setData({
-        canIUseGetUserProfile: true
-      })
-    }
-
-    // 检查登录状态
+    this.setData({ canFillProfile: this.checkProfileFillSupport() })
     this.checkLoginStatus()
+  },
+
+  // 运行时能力检测：project.config.json 的 libVersion 只影响开发者工具，
+  // 真机上跑的是用户自己微信的基础库版本，必须运行时判断。
+  checkProfileFillSupport() {
+    try {
+      return wx.canIUse('button.open-type.chooseAvatar')
+        && wx.canIUse('input.type.nickname')
+    } catch (err) {
+      return false
+    }
   },
 
   onShow() {
@@ -36,25 +46,46 @@ Page({
     }
   },
 
-  // 获取用户信息
-  getUserProfile() {
-    wx.getUserProfile({
-      desc: '用于完善用户资料',
-      success: (res) => {
-        console.log('获取用户信息成功:', res.userInfo)
-        this.login(res.userInfo)
-      },
-      fail: (err) => {
-        console.log('获取用户信息失败:', err)
-        wx.showToast({
-          title: '授权失败',
-          icon: 'none'
-        })
-      }
-    })
+  // ── 头像昵称填写能力 ────────────────────────────────────────────
+  // 不再用 wx.getUserProfile：微信自 2022-10-25 起对该接口只返回匿名数据
+  // （灰色头像 + "微信用户"），拿不到真实头像昵称。官方替代方案是
+  // <button open-type="chooseAvatar"> + <input type="nickname">，
+  // 由用户主动填写，无需 scope 授权弹窗。
+  //
+  // 登录本身只依赖 wx.login 换 code，与头像昵称完全解耦 ——
+  // 用户不填也能正常用全部功能，不该把可选项挡在登录前面。
+
+  onChooseAvatar(e) {
+    this.setData({ draftAvatar: e.detail.avatarUrl })
   },
 
-  // 登录
+  onNickInput(e) {
+    this.setData({ draftNick: e.detail.value || '' })
+  },
+
+  // 保存头像昵称到本地与全局。
+  // 注意 chooseAvatar 给的是临时文件路径，重启后失效；要长期保留需上传到
+  // 自己的存储再存 URL —— 内测阶段不值得为此加一套上传链路，先只存本地。
+  saveProfile() {
+    const nick = (this.data.draftNick || '').trim()
+    const avatar = this.data.draftAvatar
+    if (!nick && !avatar) {
+      wx.showToast({ title: '填写头像或昵称后再保存', icon: 'none' })
+      return
+    }
+
+    const app = getApp()
+    const merged = Object.assign({}, this.data.userInfo || {}, {
+      nickName: nick || (this.data.userInfo && this.data.userInfo.nickName) || '用户',
+      avatarUrl: avatar || (this.data.userInfo && this.data.userInfo.avatarUrl) || ''
+    })
+    app.setUserInfo(merged)
+    this.setData({ userInfo: merged, hasUserInfo: true, showProfileFill: false })
+    wx.showToast({ title: '已保存', icon: 'success' })
+  },
+
+  // 登录：只依赖 wx.login 换 code，不需要用户授权弹窗。
+  // userInfo 是可选的（老调用方可能仍传），没有就让后端用默认昵称建号。
   async login(userInfo) {
     this.setData({ isLoading: true })
 
@@ -65,10 +96,10 @@ Page({
       // 发送到后端验证
       const result = await post('/user/wx-login', {
         code: code,
-        userInfo: {
+        userInfo: userInfo ? {
           nickName: userInfo.nickName,
           avatarUrl: userInfo.avatarUrl
-        }
+        } : undefined
       })
 
       // 保存登录信息
@@ -83,7 +114,10 @@ Page({
       this.setData({
         userInfo: result.userInfo,
         hasUserInfo: true,
-        isLoading: false
+        isLoading: false,
+        // 登录成功后再邀请补充头像昵称——纯可选，不填也能用全部功能
+        showProfileFill: this.data.canFillProfile
+          && (!result.userInfo || !result.userInfo.avatarUrl)
       })
 
       wx.showToast({
@@ -93,12 +127,9 @@ Page({
     } catch (err) {
       console.error('登录失败:', err)
       this.setData({ isLoading: false })
-
-      // 即使登录失败，也允许使用基础功能
-      this.setData({
-        userInfo: userInfo,
-        hasUserInfo: true
-      })
+      wx.showToast({ title: '登录失败，请重试', icon: 'none' })
+      // 登录失败不再伪造已登录态：那会让用户以为记录已上云，
+      // 实际没有 token，历史同步等接口全部 401。
     }
   },
 
@@ -113,8 +144,10 @@ Page({
   onShareAppMessage() {
     return {
       title: '智能八字排盘 - 专业的命理分析工具',
-      path: '/pages/index/index',
-      imageUrl: '/assets/images/share.png'
+      path: '/pages/index/index'
+      // imageUrl 暂不指定：assets/images/share.svg 是设计稿，微信分享图只认
+      // png/jpg。补出 1200x630 的 share.png 后在此填 '/assets/images/share.png'，
+      // 未指定时微信自动截取页面上部，不会出现加载不到的空白图。
     }
   }
 })

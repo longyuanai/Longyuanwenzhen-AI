@@ -43,29 +43,32 @@ module.exports = {
   // JWT配置
   jwt: {
     secret: resolveJwtSecret(),
-    expiresIn: '7d'  // 7天过期
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d'  // 默认 7 天过期
   },
 
   // 微信小程序配置
+  // 变量名以 .env.example 的 WX_SECRET 为准；WX_APPSECRET 作为旧名兼容，勿新用。
   weixin: {
     appId: process.env.WX_APPID || '',
-    appSecret: process.env.WX_APPSECRET || ''
+    appSecret: process.env.WX_SECRET || process.env.WX_APPSECRET || ''
   },
 
   // 微信支付（商户）配置
   // apiKey 为 v2 API 密钥，用于支付回调验签；未配置时 /callback 会安全拒绝。
+  // 主名 WXPAY_*，兼容 .env.example 早期使用的 WX_PAY_* 写法。
   wxpay: {
-    mchId: process.env.WXPAY_MCHID || '',
-    apiKey: process.env.WXPAY_API_KEY || '',
-    notifyUrl: process.env.WXPAY_NOTIFY_URL || ''
+    mchId: process.env.WXPAY_MCHID || process.env.WX_PAY_MCHID || '',
+    apiKey: process.env.WXPAY_API_KEY || process.env.WX_PAY_KEY || '',
+    notifyUrl: process.env.WXPAY_NOTIFY_URL || process.env.WX_PAY_NOTIFY_URL || ''
   },
 
   // AI配置
+  // baseUrl / model 走环境变量，便于切自建 AI 网关或换模型（此前硬编码，.env 里配了也不生效）
   ai: {
     openai: {
       apiKey: process.env.OPENAI_API_KEY || '',
-      baseUrl: 'https://api.openai.com/v1',
-      model: 'gpt-4'
+      baseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+      model: process.env.OPENAI_MODEL || 'gpt-4'
     },
     wenxin: {
       apiKey: process.env.WENXIN_API_KEY || '',
