@@ -6,6 +6,7 @@
 // 杜绝自研简化算法（对齐 spec 5.1.1 禁止项）。
 
 const { Solar } = require('lunar-javascript')
+const { resolveLongitude, toTrueSolarTime } = require('./trueSolarTime')
 
 const WUXING = {
   '甲': '木', '乙': '木', '丙': '火', '丁': '火', '戊': '土',
@@ -59,8 +60,13 @@ function validateInput({ year, month, day, hour, minute, gender }) {
 
 /**
  * 完整八字排盘
- * @param {object} params {year, month, day, hour, minute=0, gender}
- * @returns {object} 排盘结果
+ *
+ * 真太阳时：默认关闭。只有传了 birthPlace 或 longitude 才校正——
+ * 历史排盘记录里没有出生地字段，静默启用会改掉用户已经看过的盘。
+ *
+ * @param {object} params {year, month, day, hour, minute=0, gender,
+ *                         birthPlace?, longitude?}
+ * @returns {object} 排盘结果；启用校正时附 trueSolarTime 元信息块
  */
 function paipan(params) {
   const error = validateInput(params)
@@ -70,7 +76,51 @@ function paipan(params) {
     throw e
   }
 
-  const { year, month, day, hour, minute = 0, gender } = params
+  // 用户填的钟表时间（北京时间），原样留档用于展示对比
+  const clock = {
+    year: params.year,
+    month: params.month,
+    day: params.day,
+    hour: params.hour,
+    minute: params.minute || 0
+  }
+  const gender = params.gender
+
+  // 解析出生地 → 经度。查不到城市会抛 INVALID_INPUT（不静默忽略：
+  // 用户填了出生地却没生效，比直接告诉他查不到更糟）
+  const geo = resolveLongitude(params)
+
+  let year = clock.year
+  let month = clock.month
+  let day = clock.day
+  let hour = clock.hour
+  let minute = clock.minute
+  let trueSolarTime = null
+
+  if (geo) {
+    const t = toTrueSolarTime(clock, geo.longitude)
+    // 校正可能把日期推出支持范围：喀什 1900-01-01 00:30 会退到 1899-12-31，
+    // 而节气表与 lunar 的可靠区间都从 1900 起。宁可明确报错也不排错盘。
+    if (t.year < MIN_YEAR || t.year > MAX_YEAR) {
+      const e = new Error(
+        `真太阳时校正后为 ${t.year}-${t.month}-${t.day}，超出 ${MIN_YEAR}-${MAX_YEAR} 支持范围`)
+      e.code = 'INVALID_INPUT'
+      throw e
+    }
+    year = t.year; month = t.month; day = t.day; hour = t.hour; minute = t.minute
+    trueSolarTime = {
+      enabled: true,
+      place: geo.place,
+      longitude: geo.longitude,
+      source: geo.source,
+      clockTime: clock,
+      solarTime: { year: t.year, month: t.month, day: t.day, hour: t.hour, minute: t.minute },
+      offsetMinutes: t.offsetMinutes,
+      longitudeOffset: t.longitudeOffset,
+      equationOfTime: t.equationOfTime,
+      crossedDay: t.crossedDay
+    }
+  }
 
   const solar = Solar.fromYmdHms(year, month, day, hour, minute, 0)
   const lunar = solar.getLunar()
@@ -148,7 +198,17 @@ function paipan(params) {
     cangGan,
     wuxing,
     daYun,
-    input: { year, month, day, hour, minute, gender }
+    // input 保持「用户填的钟表时间」语义不变：下游的落库、回显、
+    // 重新排盘都依赖它，改成校正后的时间会让记录无法还原用户输入，
+    // 且二次排盘会把校正叠加两次。校正结果单独放 trueSolarTime。
+    input: {
+      ...clock,
+      gender,
+      // 出生地是入参的一部分：落库与二次排盘都要靠它还原同一个盘
+      birthPlace: geo && geo.place ? geo.place : undefined,
+      longitude: geo && geo.source === 'longitude' ? geo.longitude : undefined
+    },
+    trueSolarTime
   }
 }
 

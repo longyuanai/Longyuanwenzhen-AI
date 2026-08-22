@@ -9,6 +9,7 @@
     "test": "jest",
     "preflight": "node scripts/preflight.js",
     "gen:solar-terms": "node scripts/gen-solar-terms.js",
+    "gen:true-solar-time": "node scripts/gen-true-solar-time.js",
     "preview:en": "node scripts/preview-en-prompt.js",
     "seed:test": "node scripts/dev-seed-test-user.js",
     "seed:friends": "node scripts/seed-friends.js",

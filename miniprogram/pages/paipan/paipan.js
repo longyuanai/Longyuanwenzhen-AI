@@ -1,5 +1,6 @@
 // pages/paipan/paipan.js
 const bazi = require('../../utils/bazi')
+const { CITY_LONGITUDE } = require('../../utils/trueSolarTime')
 const { request } = require('../../utils/request')
 const { saveBaziRecord } = require('../../utils/util')
 
@@ -25,6 +26,12 @@ Page({
       { label: '女', value: 'female' }
     ],
 
+    // 出生地（可选）。不选则不做真太阳时校正 —— 默认关闭，
+    // 与后端一致：历史记录里没有出生地，静默启用会改掉用户看过的盘。
+    cityOptions: [],       // 第 0 项是「不指定」
+    cityIndex: 0,
+    birthPlace: '',
+
     // 加载状态
     isLoading: false
   },
@@ -34,7 +41,24 @@ Page({
     const today = new Date()
     this.setData({
       birthDate: this.formatDate(today),
-      currentDate: today.getTime()
+      currentDate: today.getTime(),
+      cityOptions: this.buildCityOptions()
+    })
+  },
+
+  // 城市列表取自 utils/trueSolarTime.js（后端生成物），
+  // 不在页面里另存一份，免得与算法侧的表对不上。
+  buildCityOptions() {
+    const names = Object.keys(CITY_LONGITUDE).sort((a, b) => a.localeCompare(b, 'zh'))
+    return ['不指定（按北京时间）'].concat(names)
+  },
+
+  onCityChange(e) {
+    const index = Number(e.detail.value)
+    this.setData({
+      cityIndex: index,
+      // 第 0 项是「不指定」，对应空出生地 = 不校正
+      birthPlace: index > 0 ? this.data.cityOptions[index] : ''
     })
   },
 
@@ -152,7 +176,9 @@ Page({
         data: {
           birthDate: this.data.birthDate,
           birthTime: this.data.birthTime,
-          gender: this.data.gender
+          gender: this.data.gender,
+          // 空串表示不指定；后端对空值按「不校正」处理
+          birthPlace: this.data.birthPlace || undefined
         }
       })
       return res
@@ -170,7 +196,11 @@ Page({
         month: month,
         day: day,
         hour: this.data.currentHour,
-        gender: this.data.gender
+        // 分钟要带上：立春交年的交接精确到分钟，起运年龄也按分钟推。
+        // 写死 0 会让兜底盘与服务端盘在边界样本上不一致。
+        minute: this.data.currentMinute || 0,
+        gender: this.data.gender,
+        birthPlace: this.data.birthPlace || undefined
       })
       result.isLocalFallback = true
       return result

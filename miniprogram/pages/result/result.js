@@ -65,8 +65,29 @@ Page({
       pillars: pillars,
       // 服务端排盘不可达时用了本地简化算法（起运年龄/大运区间会有偏差），
       // 明确告知用户，避免把降级结果当成权威结论
-      isLocalFallback: !!result.isLocalFallback
+      isLocalFallback: !!result.isLocalFallback,
+      trueSolarTime: this.buildTrueSolarTimeTip(result)
     })
+  },
+
+  // 真太阳时提示条。没启用校正就返回 null（不填出生地的用户看不到任何变化）。
+  //
+  // 展示这个不是炫技：跨日校正会连日柱一起改，用户如果记得自己「以前算出来是
+  // X 日」，得让他知道差异从何而来，否则会以为我们算错了。
+  buildTrueSolarTimeTip(result) {
+    const t = result && result.trueSolarTime
+    if (!t || !t.enabled) return null
+
+    const sign = t.offsetMinutes >= 0 ? '+' : '−'
+    const abs = Math.abs(t.offsetMinutes)
+    const pad = (n) => String(n).padStart(2, '0')
+    const s = t.solarTime
+    return {
+      place: t.place || (t.longitude + '°E'),
+      offsetText: `${sign}${abs} 分钟`,
+      solarTimeText: `${s.year}-${pad(s.month)}-${pad(s.day)} ${pad(s.hour)}:${pad(s.minute)}`,
+      crossedDay: !!t.crossedDay
+    }
   },
 
   // 查看解读

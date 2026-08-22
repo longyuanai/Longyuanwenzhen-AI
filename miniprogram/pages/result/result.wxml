@@ -5,6 +5,15 @@
     当前为离线排盘结果，起运年龄与大运区间可能有偏差，联网后重新排盘可获得精确结果。
   </view>
 
+  <!-- 真太阳时：填了出生地才出现。跨日时要说清楚，否则用户会以为日柱算错了 -->
+  <view class="tst-tip" wx:if="{{trueSolarTime}}">
+    <text class="tst-title">已按 {{trueSolarTime.place}} 真太阳时校正 {{trueSolarTime.offsetText}}</text>
+    <text class="tst-detail">实际用于排盘的时刻：{{trueSolarTime.solarTimeText}}</text>
+    <text class="tst-detail" wx:if="{{trueSolarTime.crossedDay}}">
+      校正后跨越了日界，日柱与时柱均随之改变。
+    </text>
+  </view>
+
   <!-- 基本信息 -->
   <view class="info-section card">
     <view class="info-row">

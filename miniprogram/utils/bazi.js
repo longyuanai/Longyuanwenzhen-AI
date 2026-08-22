@@ -13,6 +13,7 @@
 // backend/utils/__tests__/paipan-parity.test.js 校验两端逐日一致。
 
 const solarTerms = require('./solarTerms')
+const { resolveLongitude, toTrueSolarTime } = require('./trueSolarTime')
 
 // 天干
 const TIANGAN = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸']
@@ -213,12 +214,41 @@ function getHourPillar(dayGan, hour, nextDayGan) {
 }
 
 /**
+ * 计算地支的十神：取该支的**藏干本气**（CANG_GAN[zhi][0]）对日主论十神。
+ *
+ * 这是命理通则，也是后端 lunar-javascript 的 getXxxShiShenZhi()[0] 的取值方式，
+ * 两端由此对齐。不能拿地支本身当天干去论——地支的阴阳与其藏干本气的阴阳
+ * 并不总是一致（亥为阴支，本气壬却是阳干），直接论会错到「比肩/劫财」这类
+ * 同性异性的分档上。
+ *
+ * @param {string} dayGan 日干
+ * @param {string} zhi    地支
+ * @returns {string} 十神名
+ */
+function getShiShenOfZhi(dayGan, zhi) {
+  const benQi = CANG_GAN[zhi] && CANG_GAN[zhi][0]
+  if (!benQi) throw new Error(`未知地支「${zhi}」`)
+  return getShiShen(dayGan, benQi)
+}
+
+/**
  * 计算十神
  * @param {string} dayGan - 日干
  * @param {string} targetGan - 目标天干
  * @returns {string} 十神名称
  */
 function getShiShen(dayGan, targetGan) {
+  // 只接受天干。地支必须先取藏干本气再进来——见 getShiShenOfZhi。
+  //
+  // 这里曾被直接传入地支：WUXING 表恰好也收了地支，五行查得到，于是错误被
+  // 掩盖；但 TIANGAN.indexOf('亥') 返回 -1，-1 % 2 === -1 永不等于日干的 0/1，
+  // 导致 sameYinYang 恒为 false，四个地支十神一律取到「异性」那一档
+  // （劫财/伤官/正财/正官/正印）。黄金基准盘 2002-11-20 上 3/4 地支十神算错。
+  // 显式抛错，别再让它静默走过去。
+  if (TIANGAN.indexOf(targetGan) === -1) {
+    throw new Error(`getShiShen 只接受天干，收到「${targetGan}」；地支请用 getShiShenOfZhi`)
+  }
+
   const dayWuxing = WUXING[dayGan]
   const targetWuxing = WUXING[targetGan]
   const dayYinYang = TIANGAN.indexOf(dayGan) % 2  // 0为阳，1为阴
@@ -418,14 +448,24 @@ function buildBirthPayload(result) {
   if ([year, month, day, hour].some((v) => typeof v !== 'number' || isNaN(v))) {
     return null
   }
-  return {
+  const payload = {
     year: year,
     month: month,
     day: day,
     hour: hour,
-    minute: 0,
+    // 分钟必须如实带上，不能写死 0：立春交年的交接时刻精确到分钟，
+    // 起运年龄也是按分钟推的。写死 0 会让「解读依据的盘」与
+    // 「页面展示的盘」在边界样本上不是同一个。
+    minute: typeof input.minute === 'number' ? input.minute : 0,
     gender: input.gender || 'male'
   }
+
+  // 出生地：有才带，没有就不带（真太阳时默认关闭）。
+  // 漏带会让服务端按钟表时间重排，解读与展示对不上。
+  if (input.birthPlace) payload.birthPlace = input.birthPlace
+  if (typeof input.longitude === 'number') payload.longitude = input.longitude
+
+  return payload
 }
 
 /**
@@ -434,8 +474,41 @@ function buildBirthPayload(result) {
  * @returns {object} 排盘结果
  */
 function paipan(params) {
-  const { year, month, day, hour, gender } = params
-  const minute = params.minute || 0
+  const gender = params.gender
+  const clock = {
+    year: params.year,
+    month: params.month,
+    day: params.day,
+    hour: params.hour,
+    minute: params.minute || 0
+  }
+
+  // 真太阳时：默认关闭，只有传了 birthPlace / longitude 才校正。
+  // 逻辑与后端同源（utils/trueSolarTime.js 由后端生成），保证两端一致。
+  const geo = resolveLongitude(params)
+  let year = clock.year
+  let month = clock.month
+  let day = clock.day
+  let hour = clock.hour
+  let minute = clock.minute
+  let trueSolarTime = null
+
+  if (geo) {
+    const t = toTrueSolarTime(clock, geo.longitude)
+    year = t.year; month = t.month; day = t.day; hour = t.hour; minute = t.minute
+    trueSolarTime = {
+      enabled: true,
+      place: geo.place,
+      longitude: geo.longitude,
+      source: geo.source,
+      clockTime: clock,
+      solarTime: { year: t.year, month: t.month, day: t.day, hour: t.hour, minute: t.minute },
+      offsetMinutes: t.offsetMinutes,
+      longitudeOffset: t.longitudeOffset,
+      equationOfTime: t.equationOfTime,
+      crossedDay: t.crossedDay
+    }
+  }
 
   // 定位所在的「节」——年柱、月柱、起运年龄都以它为准（不是日历年月）
   const jieLoc = locateJie(year, month, day, hour, minute)
@@ -458,13 +531,13 @@ function paipan(params) {
   // 计算十神
   const tenGods = {
     yearGan: getShiShen(dayPillar.gan, yearPillar.gan),
-    yearZhi: getShiShen(dayPillar.gan, yearPillar.zhi),
+    yearZhi: getShiShenOfZhi(dayPillar.gan, yearPillar.zhi),
     monthGan: getShiShen(dayPillar.gan, monthPillar.gan),
-    monthZhi: getShiShen(dayPillar.gan, monthPillar.zhi),
+    monthZhi: getShiShenOfZhi(dayPillar.gan, monthPillar.zhi),
     dayGan: '日主',
-    dayZhi: getShiShen(dayPillar.gan, dayPillar.zhi),
+    dayZhi: getShiShenOfZhi(dayPillar.gan, dayPillar.zhi),
     hourGan: getShiShen(dayPillar.gan, hourPillar.gan),
-    hourZhi: getShiShen(dayPillar.gan, hourPillar.zhi)
+    hourZhi: getShiShenOfZhi(dayPillar.gan, hourPillar.zhi)
   }
 
   // 获取藏干
@@ -519,14 +592,23 @@ function paipan(params) {
       hourZhi: WUXING[hourPillar.zhi]
     },
 
-    // 原始输入
+    // 原始输入：必须是用户填的**钟表时间**，不是校正后的真太阳时。
+    // 上面 year/month/day/hour 已被真太阳时改写过，这里若直接用它们，
+    // 记录回显会显示成校正后的时间，且拿去二次排盘会把校正叠加两次。
     input: {
-      year: year,
-      month: month,
-      day: day,
-      hour: hour,
-      gender: gender
-    }
+      year: clock.year,
+      month: clock.month,
+      day: clock.day,
+      hour: clock.hour,
+      minute: clock.minute,
+      gender: gender,
+      // 出生地也是入参的一部分：buildBirthPayload 要靠它把校正条件
+      // 原样带给服务端，否则服务端会按钟表时间重排出另一个盘
+      birthPlace: geo && geo.place ? geo.place : undefined,
+      longitude: geo && geo.source === 'longitude' ? geo.longitude : undefined
+    },
+
+    trueSolarTime: trueSolarTime
   }
 
   return result
@@ -541,6 +623,7 @@ module.exports = {
   getDayPillar,
   getHourPillar,
   getShiShen,
+  getShiShenOfZhi,
   getCangGan,
   getDaYun,
   paipan,

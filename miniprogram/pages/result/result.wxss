@@ -231,3 +231,28 @@
   font-size: 26rpx;
   line-height: 1.6;
 }
+
+/* 真太阳时提示：用蓝色而非降级提示的橙色 —— 这是「算得更准」，
+   不是「结果有偏差」，两者语义相反，配色不能混 */
+.tst-tip {
+  display: flex;
+  flex-direction: column;
+  margin: 20rpx 24rpx 0;
+  padding: 20rpx 24rpx;
+  background: #e6f4ff;
+  border: 2rpx solid #91caff;
+  border-radius: 12rpx;
+  font-size: 26rpx;
+  line-height: 1.6;
+}
+
+.tst-title {
+  color: #0958d9;
+  font-weight: 500;
+}
+
+.tst-detail {
+  color: #1677ff;
+  font-size: 24rpx;
+  margin-top: 6rpx;
+}

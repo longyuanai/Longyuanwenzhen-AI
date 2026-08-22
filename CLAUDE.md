@@ -40,12 +40,15 @@ docker compose exec backend npm run preflight   # 配置自检,有阻断项退�
 docker compose up -d mongo redis
 cd backend && npm run dev
 
-# 跑测试(39 套件 / 412 用例 / 约 10s)
+# 跑测试(43 套件 / 486 用例 / 约 10s)
 cd backend && npm test
 
 # 排盘差分校验(与 tyme4ts 对比,改排盘逻辑后必跑)
 cd backend && npm run diff:paipan            # 5000 随机盘
 cd backend && npm run diff:paipan -- --scan=1984   # 逐日扫描某年
+
+# 真太阳时模块同步到小程序(改了 backend/utils/trueSolarTime.js 后必跑)
+cd backend && npm run gen:true-solar-time
 
 # 联调:自签 JWT + 插 user + paid four_school 订单(幂等)
 node backend/scripts/dev-seed-test-user.js
@@ -58,7 +61,7 @@ node backend/scripts/dev-seed-test-user.js
 |---|---|---|
 | 用户 | `POST /api/v1/user/wx-login` | 微信登录,返回 JWT |
 | 用户 | `GET /api/v1/user/profile` | 鉴权 |
-| 排盘 | `POST /api/v1/bazi/paipan` | 免费(`authOptional`),服务端权威排盘;登录则落库 |
+| 排盘 | `POST /api/v1/bazi/paipan` | 免费(`authOptional`),服务端权威排盘;登录则落库。可选 `birthPlace`/`longitude` 启用真太阳时 |
 | 排盘 | `GET /api/v1/bazi/history` | 鉴权,返回本人排盘记录(`?limit=` 1-100,默认 20) |
 | 排盘 | `POST /api/v1/bazi/history/sync` | 鉴权,批量同步本机记录(登录后合并) |
 | 排盘 | `PUT /api/v1/bazi/history/:id` | 鉴权,改备注名(用 PUT 因 wx.request 不支持 PATCH) |
@@ -84,6 +87,8 @@ node backend/scripts/dev-seed-test-user.js
 - **排盘正确性由第三方差分校验**:`npm run diff:paipan` 拿 `tyme4ts`(cantian-ai/bazi-mcp 的底层,与我们用的 lunar-javascript 同作者但为完整重写)当第二意见,逐柱 + 大运比对。`--scan=YYYY` 逐日扫描,`--seed=` 可复现。**改任何排盘逻辑后必跑** —— parity 测试只证明「两端算得一样」,差分才证明「算得对」。首轮就抓出了晚子时流派问题(见下条)。
 - **晚子时(23 点)默认走流派 1**:日柱进次日,`BAZI_LATE_ZI_SECT=2` 可切回流派 2。流派 2 是 lunar-javascript 的默认值,但它会排出**矛盾盘** —— 1965-12-23 23:45 得 日柱`辛亥`+时柱`庚子`,而辛日的子时按五鼠遁应是`戊子`(庚子是从次日日干壬推来的)。于是时干十神拿错误的日主去算,`偏印`变`劫财`,再级联到身强弱/喜忌/格局。影响所有 23 点出生者(约 4%)。**改这个开关必须同步改 `miniprogram/utils/bazi.js` 的 `LATE_ZI_SECT`**,否则服务端排盘与本地兜底会对同一个盘给出不同结论。
 - **起运年龄是「lunar 流派1」,不是算错**:tyme4ts 有 4 种起运 provider,实测 3000 盘只有 `LunarSect1ChildLimitProvider` 与我们 100% 一致(Default/China95/LunarSect2 各差 ~1%)。差分脚本已钉死该 provider,别删 —— 否则每次跑都冒出 1% 已知流派噪音,真 bug 就被淹了。
+- **真太阳时默认关闭,传了出生地才校正**:`utils/trueSolarTime.js`。入参 `birthPlace`(122 城离线经度表)或 `longitude`,两者都不给就完全不校正 —— 历史记录里没有出生地,静默启用会改掉用户已看过的盘。**经度校正只是一半,另一半是均时差**(±16 分钟,足以跨时辰边界),用 NOAA/Meeus 算法,实测与天文年历偏差 <0.2 分钟。校正**会跨日**(喀什 00:30 退到前一天 21:34),跨日就换日柱换日主换全部十神,所以返回的是完整年月日而非只调时分。`input` 里存的始终是**钟表时间**,不是校正后的时刻 —— 否则拿 input 二次排盘会把校正叠加两次。小程序侧 `miniprogram/utils/trueSolarTime.js` 是**后端同一文件的生成物**(`npm run gen:true-solar-time`),`trueSolarTime.gen.test.js` 守住不同步就变红。
+- **地支十神必须按藏干本气算**:`getShiShenOfZhi(dayGan, zhi)` 取 `CANG_GAN[zhi][0]` 再论十神。小程序侧曾把**地支直接喂给只吃天干的 `getShiShen()`** —— `WUXING` 表恰好也收了地支,五行查得到掩盖了错误,但 `TIANGAN.indexOf('亥')` 返回 -1,`-1 % 2 === -1` 永不等于日干的 0/1,于是四个地支十神一律落到「异性」那一档。黄金基准盘上 3/4 地支十神是错的而四柱全对,旧 parity 测试只比四柱所以一路绿灯。`getShiShen()` 现在收到地支会抛错。
 - **两端排盘一致性由节气表保证**:`miniprogram/utils/solarTerms.js`(1899-2101,22KB)由 `backend/scripts/gen-solar-terms.js` 从 lunar-javascript 预生成,本地的立春分年/节气分月/起运年龄都基于它,与后端**按构造对齐**。表范围比支持范围两端各多一年(年初年末算起运要查相邻年的节)。
   改任一侧排盘逻辑或重新生成表后,必须跑 `utils/__tests__/paipan-parity.test.js`(含 6 个年份逐日扫描)。重新生成:`npm run gen:solar-terms`。
 - **身强弱 / 喜忌 / 格局由 `mingju.js` 确定性算**,作为"已知结论"注入 prompt;**绝不信任客户端**传入的论断
@@ -99,10 +104,10 @@ node backend/scripts/dev-seed-test-user.js
 
 ## 测试
 
-- jest,39 套件 / 412 用例 / ~10s 全绿(2026-07-31)
+- jest,43 套件 / 486 用例 / ~10s 全绿(2026-08-22)
 - 黄金基准:机主本人盘 2002-11-20 巳时男 + `bazi-skill-dist/cases/` 张学良 / 邵逸夫(均在 1900-2100 范围内)
 - 跑命令:`cd backend && npm test`
-- 测试目录:`utils/__tests__/`(25) + `routes/__tests__/`(9) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
+- 测试目录:`utils/__tests__/`(28) + `routes/__tests__/`(10) + `middleware/__tests__/`(3) + `config/__tests__/`(2) + `scripts/__tests__/`(1)
 - **测试之外还有一层**:`npm run diff:paipan` 与第三方实现差分。它不在 `npm test` 里(要跑几千个盘,慢),但改排盘逻辑后必须手动跑一次。
 - 端到端 RAG 测试 mock HTTP,**不依赖 LightRAG 实际运行**
 
@@ -126,6 +131,8 @@ node backend/scripts/dev-seed-test-user.js
 - **🟡 P1 #31 — 无 Mongo 时权益检查永远 403**:`utils/entitlementRegistry.js` 已实现 in-memory 兜底(走 `mongoose.connection.readyState === 1` 判 Mongo 连接),Mongo 写失败不抛错。无 Mongo 演示不再永远 403。Mongo 命中结果缓存 60s(`ENTITLEMENT_CACHE_TTL_MS` 可调),退款/撤销后自动回源。
 - **CORS `*` → 已修**:`middleware/security.js` 的 `corsAllow` 读 `ALLOWED_ORIGINS`,prod fail-closed;`analysisRateLimit` 60 req/min per IP(可 `RATE_LIMIT_DISABLED=1` 关)。**✅ 已从 `app.use` 全局改为只挂 `/api/v1/analysis` 路由段**——此前把 `/health`、`/bazi/paipan` 一起限了,健康检查会被自己的限流打成 429。范围由 `routes/__tests__/ratelimit-scope.test.js` 锁死。
 - **限流计数优先走 Redis**:配了 `REDIS_URL` 则多实例共享计数,否则回落进程内 Map(单实例等价,多实例不精确)。Redis 客户端统一在 `utils/redisClient.js`,别再各处复制 `getRedis()`。
+- **✅ P0 — Redis 连不上时 `/analysis/*` 无限挂起 → 已修**:node-redis 默认把客户端未就绪时发出的命令**排队**(offline queue),于是 `await redis.incr()` 的 promise 永不 settle,外层 try/catch 一辈子等不到 reject —— 限流不是降级成进程内计数,而是把每个请求挂死(`/checkup` 从 7ms 变成永不返回)。**任何配了 `REDIS_URL` 而 Redis 短暂不可用的部署都会中招**。修法三层缺一不可:`disableOfflineQueue: true`(命令立即抛错而非排队)+ 发命令前查 `isReady` + 单条命令 200ms 超时(`REDIS_COMMAND_TIMEOUT_MS` 可调);重连用有界退避,Redis 恢复后自动接回。回归测试在 `utils/__tests__/redisClient.offline.test.js`。**给 redis 写 mock 时必须带 `isReady: true`**,否则用例会静默走降级分支,永远测不到限流。
+- **`quotaGuard` / `antiBrush` 在 Redis 不可用时是「放行」不是「拦截」**:`middleware/access.js` 刻意的降级语义(不阻断业务)。这与 `security.js` 的 `analysisRateLimit` 不同 —— 后者有进程内 Map 兜底。别把两者的行为记混。
 - **✅ 小程序 API 双前缀 → 已修**:`request.js` 的 `BASE_URL` 已含 `/api/v1`,页面里 url 只写 `/analysis/basic`。曾有页面写全路径拼成 `/api/v1/api/v1/...` 全部 404,且被上层 catch 静默降级掩盖。`normalizePath()` 现会剥掉重复前缀并 warn。
 - **✅ 解读接口只收 birth → 已修**:`/analysis/*` 收 `birth:{year,month,day,hour,minute,gender}`,后端自行排盘。客户端算的四柱/五行不是入参(服务端权威)。小程序侧用 `utils/bazi.js` 的 `buildBirthPayload(result)` 统一构造。
 - **`.env` 变量名**:以 `.env.example` 为准(`WX_SECRET` / `WXPAY_API_KEY` / `WXPAY_MCHID`)。`config/index.js` 兼容旧名 `WX_APPSECRET` / `WX_PAY_KEY`,新代码别用。`config/__tests__/env-wiring.test.js` 锁死这层接线。

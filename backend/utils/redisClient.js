@@ -11,6 +11,22 @@
 let _client = null
 let _tried = false
 
+// 单条命令的兜底超时。Redis 正常时命令是亚毫秒级的，200ms 已经宽裕到
+// 不会误伤；真触发了说明 Redis 病了，此时限流降级远好过拖慢请求。
+const COMMAND_TIMEOUT_MS = Number(process.env.REDIS_COMMAND_TIMEOUT_MS) || 200
+
+// 给 promise 加超时。注意要清掉定时器：不清的话每个请求都会留一个
+// 活跃 timer，把 Node 的事件循环钉住，进程退不出去。
+function withTimeout(promise, ms) {
+  let timer = null
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('redis command timeout')), ms)
+    })
+  ]).finally(() => { if (timer) clearTimeout(timer) })
+}
+
 /**
  * 取共享 Redis 客户端。
  * @returns {object|null} node-redis 客户端；不可用时返回 null
@@ -21,7 +37,24 @@ function getRedis() {
   if (!process.env.REDIS_URL) return null
   try {
     const { createClient } = require('redis')
-    const client = createClient({ url: process.env.REDIS_URL })
+    const client = createClient({
+      url: process.env.REDIS_URL,
+      // 关掉离线队列：这是本文件最要紧的一行。
+      // node-redis 默认会把客户端未就绪时发出的命令**排队**，等连上了再发。
+      // 于是 Redis 挂着时 `await redis.incr()` 的 promise 永不 settle，
+      // 外层 try/catch 一辈子等不到 reject —— 限流不是降级成进程内计数，
+      // 而是把每一个 /analysis 请求挂死。实测就是这么卡住的。
+      // 关掉之后未就绪时命令立即抛错，走下面的 catch 返回 null 降级。
+      disableOfflineQueue: true,
+      socket: {
+        // 不给 connectTimeout 的话，连不上时握手会一直吊着
+        connectTimeout: 2000,
+        // 有界退避重连：Redis 恢复后要能自动接回共享计数，
+        // 所以不能像自检脚本那样直接 false 关掉重连。
+        // 但退避必须封顶，否则退避间隔会一路涨到不可用。
+        reconnectStrategy: (retries) => Math.min(200 * (retries + 1), 5000)
+      }
+    })
     client.on('error', () => {}) // 吞错，容错交给各调用点
     client.connect().catch(() => {})
     _client = client
@@ -42,9 +75,16 @@ function getRedis() {
 async function incrInWindow(key, windowMs) {
   const redis = getRedis()
   if (!redis) return null
+  // 未就绪直接降级，不必等到命令抛错。disableOfflineQueue 已经兜住了，
+  // 这层是显式表达意图：限流宁可算不准，也不能让请求等 Redis。
+  if (!redis.isReady) return null
   try {
-    const n = await redis.incr(key)
-    if (n === 1) await redis.expire(key, Math.ceil(windowMs / 1000))
+    const n = await withTimeout(redis.incr(key), COMMAND_TIMEOUT_MS)
+    if (n === 1) {
+      // 过期设置失败不影响本次判定，但别让它把整个调用拖进 catch
+      await withTimeout(redis.expire(key, Math.ceil(windowMs / 1000)), COMMAND_TIMEOUT_MS)
+        .catch(() => {})
+    }
     return n
   } catch {
     return null

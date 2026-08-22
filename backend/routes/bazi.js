@@ -37,7 +37,8 @@ function parseBirth(birthDate, birthTime) {
  */
 router.post('/paipan', authOptional, async (ctx) => {
   try {
-    const { birthDate, birthTime, gender } = ctx.request.body
+    // birthPlace / longitude 可选：给了才做真太阳时校正（默认关闭）
+    const { birthDate, birthTime, gender, birthPlace, longitude } = ctx.request.body
 
     // 参数验证
     if (!birthDate || !birthTime || !gender) {
@@ -66,7 +67,7 @@ router.post('/paipan', authOptional, async (ctx) => {
     }
 
     // 后端权威排盘（对齐 spec 5.2.2：排盘以后端计算为准）
-    const result = paipan({ ...birth, gender: normGender })
+    const result = paipan({ ...birth, gender: normGender, birthPlace, longitude })
 
     const baziStr = ['year', 'month', 'day', 'hour']
       .map((k) => result[k + 'Pillar'].gan + result[k + 'Pillar'].zhi)
@@ -79,7 +80,9 @@ router.post('/paipan', authOptional, async (ctx) => {
     if (userId) {
       const record = await recordStore.save(
         userId,
-        { ...birth, gender: normGender },
+        // 出生地要一起存：历史回放靠 birth 重新排盘，漏了它就会按钟表时间
+        // 重排成另一个盘。用引擎归一化后的取值（城市名已去后缀/空白）。
+        { ...birth, gender: normGender, birthPlace, longitude },
         baziStr,
         ctx.request.body.label
       )

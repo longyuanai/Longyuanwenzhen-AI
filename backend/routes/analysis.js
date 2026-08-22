@@ -164,8 +164,9 @@ function computeFromBirth(birth) {
     e.code = 'INVALID_INPUT'
     throw e
   }
-  const { year, month, day, hour, minute = 0, gender } = birth
-  const pp = paipan({ year, month, day, hour, minute, gender }) // 内部已做边界校验
+  const { year, month, day, hour, minute = 0, gender, birthPlace, longitude } = birth
+  // birthPlace / longitude 透传给排盘：两者都不给就不做真太阳时校正（默认关闭）
+  const pp = paipan({ year, month, day, hour, minute, gender, birthPlace, longitude }) // 内部已做边界校验
   const mingju = analyzeMingju(pp)
   const baziStr = [pp.yearPillar, pp.monthPillar, pp.dayPillar, pp.hourPillar]
     .map((p) => p.gan + p.zhi)
@@ -461,6 +462,68 @@ function buildCheckupLabelsEn(pp, m) {
   }
 }
 
+/**
+ * 真太阳时展示块。没启用校正时返回 null（默认关闭，不打扰）。
+ *
+ * 启用时额外算一遍**未校正**的盘做对比：校正是否真的改了四柱，是
+ * 「我们比别家算得准」这个卖点唯一能拿出来给用户看的实证。
+ * 排盘是纯函数且只需微秒级，多算一遍不心疼。
+ */
+function buildTrueSolarTimeView(pp, birth, lang) {
+  const t = pp.trueSolarTime
+  if (!t) return null
+
+  const gz = (r, k) => r[k + 'Pillar'].gan + r[k + 'Pillar'].zhi
+  const KEYS = ['year', 'month', 'day', 'hour']
+
+  let plain = null
+  try {
+    // 同一出生时刻、去掉出生地
+    plain = paipan({
+      year: birth.year, month: birth.month, day: birth.day,
+      hour: birth.hour, minute: birth.minute || 0, gender: birth.gender
+    })
+  } catch (e) {
+    // 未校正版可能超界（校正把日期拉回了范围内）。对比拿不到就不展示对比，
+    // 不能因为这个附加信息把整个体检打挂。
+    plain = null
+  }
+
+  const changedPillars = plain ? KEYS.filter((k) => gz(pp, k) !== gz(plain, k)) : []
+  const sign = t.offsetMinutes >= 0 ? '+' : '−'
+  const abs = Math.abs(t.offsetMinutes)
+
+  // 英文版一律用经度指代地点，不回落到中文城市名——城市表里存的是中文，
+  // 直接塞进英文句子会让英文正文混中文（项目里已有的规矩）。
+  // 给 122 个城市配一套罗马化表不值得，经度对英文读者反而更明确。
+  const zhWhere = t.place || `东经 ${t.longitude}°`
+  const enWhere = `${t.longitude}°E`
+
+  const summary = lang === 'en'
+    ? (changedPillars.length
+      ? `True solar time at ${enWhere} differs from clock time by ${sign}${abs} min, which changes ${changedPillars.length} of the four pillars.`
+      : `True solar time at ${enWhere} differs from clock time by ${sign}${abs} min; the four pillars are unaffected.`)
+    : (changedPillars.length
+      ? `按${zhWhere}的真太阳时校正 ${sign}${abs} 分钟，四柱中有 ${changedPillars.length} 柱因此改变。`
+      : `按${zhWhere}的真太阳时校正 ${sign}${abs} 分钟，未改变四柱。`)
+
+  return {
+    enabled: true,
+    place: t.place,
+    longitude: t.longitude,
+    offsetMinutes: t.offsetMinutes,
+    longitudeOffset: t.longitudeOffset,
+    equationOfTime: t.equationOfTime,
+    crossedDay: t.crossedDay,
+    clockTime: t.clockTime,
+    solarTime: t.solarTime,
+    // 哪些柱因校正而变——不校正就看不到的差异，这是付费转化的钩子
+    changedPillars,
+    comparable: plain !== null,
+    summary
+  }
+}
+
 router.post('/checkup', antiBrush({ dim: 'analysis.checkup', max: 120 }), async (ctx) => {
   try {
     let { birth } = ctx.request.body
@@ -503,6 +566,7 @@ router.post('/checkup', antiBrush({ dim: 'analysis.checkup', max: 120 }), async 
         geju: m.geju,
         oneLiner: lang === 'en' ? buildOneLinerEn(pp, m) : buildOneLiner(pp, m),
         currentDaYun,
+        trueSolarTime: buildTrueSolarTimeView(pp, birth, lang),
         disclaimer: lang === 'en' ? DISCLAIMER_EN : m.disclaimer,
         // 仅 en 时附带；zh 走原字段，小程序不受影响
         labels: lang === 'en' ? buildCheckupLabelsEn(pp, m) : undefined

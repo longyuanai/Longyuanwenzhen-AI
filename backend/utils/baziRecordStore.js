@@ -24,8 +24,12 @@ function hasMongo() {
 }
 
 // 归一化 birth，作为幂等键与存储值
+//
+// birthPlace 必须一起存：/history 的契约是「拿 birth 重新调 /paipan 即可」，
+// 排盘是纯函数所以只存入参不存结论。但真太阳时校正也依赖出生地——
+// 漏存出生地，回放历史就会得到另一个盘（喀什的盘能差出一整个日柱）。
 function normalizeBirth(birth) {
-  return {
+  const b = {
     year: Number(birth.year),
     month: Number(birth.month),
     day: Number(birth.day),
@@ -33,10 +37,20 @@ function normalizeBirth(birth) {
     minute: Number(birth.minute || 0),
     gender: birth.gender
   }
+  // 只在有值时落字段：老记录没有这两项，补 undefined 会让幂等键与存量记录错开
+  const place = birth.birthPlace == null ? '' : String(birth.birthPlace).trim()
+  if (place) b.birthPlace = place
+  if (birth.longitude != null && birth.longitude !== '' && Number.isFinite(Number(birth.longitude))) {
+    b.longitude = Number(birth.longitude)
+  }
+  return b
 }
 
+// 幂等键要带出生地：同一时刻、不同出生地是两个不同的盘，
+// 不带的话第二个盘会覆盖掉第一个。
 function birthKey(b) {
-  return `${b.year}-${b.month}-${b.day}-${b.hour}-${b.minute}-${b.gender}`
+  const geo = b.birthPlace || (b.longitude != null ? `@${b.longitude}` : '')
+  return `${b.year}-${b.month}-${b.day}-${b.hour}-${b.minute}-${b.gender}-${geo}`
 }
 
 // 内存记录必须深拷贝后再交出去：浅拷贝会把嵌套的 birth 原样共享出去，
@@ -68,7 +82,11 @@ async function save(userId, birth, baziStr, label) {
           'birth.day': b.day,
           'birth.hour': b.hour,
           'birth.minute': b.minute,
-          'birth.gender': b.gender
+          'birth.gender': b.gender,
+          // 与 uniq_user_birth_v2 的键集保持一致；未填出生地的记录该字段不存在，
+          // 查询侧显式用 null 才能命中（Mongo 里缺失字段等价于 null）
+          'birth.birthPlace': b.birthPlace == null ? null : b.birthPlace,
+          'birth.longitude': b.longitude == null ? null : b.longitude
         },
         {
           $set: { baziStr, updatedAt: new Date(), ...(label ? { label: normalizeLabel(label) } : {}) },

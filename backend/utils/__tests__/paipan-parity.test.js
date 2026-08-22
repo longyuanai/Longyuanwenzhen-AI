@@ -23,12 +23,107 @@ function pillarsOf(r) {
     .join(' ')
 }
 
-function bothPaipan(y, m, d, h, gender, minute = 0) {
+function bothPaipan(y, m, d, h, gender, minute = 0, extra = {}) {
+  const args = { year: y, month: m, day: d, hour: h, minute, gender, ...extra }
   return {
-    server: serverBazi.paipan({ year: y, month: m, day: d, hour: h, minute, gender }),
-    local: localBazi.paipan({ year: y, month: m, day: d, hour: h, minute, gender })
+    server: serverBazi.paipan(args),
+    local: localBazi.paipan(args)
   }
 }
+
+describe('前后端排盘一致性 - 十神与藏干', () => {
+  // 这组测试补的是一个长期缺口：此前 parity 只比四柱与大运，从不比十神，
+  // 于是本地把**地支**直接喂给了只吃天干的 getShiShen()——
+  // TIANGAN.indexOf('亥') === -1，-1 % 2 === -1 永不等于日干的 0/1，
+  // sameYinYang 恒为 false，四个地支十神一律落到「异性」那一档。
+  // 黄金基准盘（机主本人盘）上 3/4 地支十神是错的，四柱却完全正确，
+  // 所以旧测试一路绿灯。地支十神须按藏干本气论。
+  const CASES = [
+    [2002, 11, 20, 10, 'male'],    // 黄金基准：机主本人盘
+    [1901, 3, 15, 4, 'female'],
+    [1960, 7, 1, 13, 'male'],
+    [1984, 2, 4, 23, 'female'],
+    [2024, 12, 31, 0, 'male'],
+    [2099, 6, 6, 18, 'female']
+  ]
+
+  test.each(CASES)('%i-%i-%i %i时 %s：十神八项全一致', (y, m, d, h, gender) => {
+    const { server, local } = bothPaipan(y, m, d, h, gender)
+    expect(local.tenGods).toEqual(server.tenGods)
+  })
+
+  test.each(CASES)('%i-%i-%i %i时 %s：藏干一致', (y, m, d, h, gender) => {
+    const { server, local } = bothPaipan(y, m, d, h, gender)
+    expect(local.cangGan).toEqual(server.cangGan)
+  })
+
+  test('逐日扫描 1988 年：十神两端完全一致', () => {
+    for (let m = 1; m <= 12; m++) {
+      for (let d = 1; d <= 28; d++) {
+        const { server, local } = bothPaipan(1988, m, d, 9, 'male')
+        expect(local.tenGods).toEqual(server.tenGods)
+      }
+    }
+  })
+
+  test('getShiShen 收到地支时抛错，不再静默算错', () => {
+    expect(() => localBazi.getShiShen('壬', '亥')).toThrow(/只接受天干/)
+    expect(localBazi.getShiShenOfZhi('壬', '亥')).toBe('比肩')  // 亥藏本气壬，同为阳水
+  })
+})
+
+describe('前后端排盘一致性 - 真太阳时', () => {
+  // 小程序侧的 trueSolarTime.js 是后端同一文件的生成物，所以「一致」是
+  // 按构造成立的。这里验的是接线：两侧都真的把校正接进了排盘主流程，
+  // 而不是有一侧引了模块却没用。
+  const CITIES = ['喀什', '乌鲁木齐', '拉萨', '成都', '北京', '哈尔滨', '上海']
+
+  test.each(CITIES)('%s：校正后四柱与大运两端一致', (city) => {
+    const { server, local } = bothPaipan(1990, 8, 8, 6, 'male', 15, { birthPlace: city })
+    expect(pillarsOf(local)).toBe(pillarsOf(server))
+    expect(local.daYun.startAge).toBe(server.daYun.startAge)
+    expect(local.trueSolarTime.offsetMinutes).toBe(server.trueSolarTime.offsetMinutes)
+  })
+
+  test('跨日校正两端一致（含日柱与十神）', () => {
+    const { server, local } = bothPaipan(2000, 6, 15, 0, 'male', 30, { birthPlace: '喀什' })
+    expect(server.trueSolarTime.crossedDay).toBe(true)
+    expect(pillarsOf(local)).toBe(pillarsOf(server))
+    expect(local.dayPillar.gan).toBe(server.dayPillar.gan)
+    expect(local.tenGods).toEqual(server.tenGods)
+  })
+
+  test('不传出生地时两端都不校正，且与加真太阳时之前的结论相同', () => {
+    const { server, local } = bothPaipan(2000, 6, 15, 0, 'male', 30)
+    expect(server.trueSolarTime).toBeNull()
+    expect(local.trueSolarTime).toBeNull()
+    expect(pillarsOf(server)).toBe('庚辰 壬午 甲辰 甲子')
+    expect(pillarsOf(local)).toBe(pillarsOf(server))
+  })
+
+  test('两端 input 都保留钟表时间，不被校正改写', () => {
+    const { server, local } = bothPaipan(2000, 6, 15, 0, 'male', 30, { birthPlace: '喀什' })
+    for (const r of [server, local]) {
+      expect(r.input.day).toBe(15)
+      expect(r.input.hour).toBe(0)
+      expect(r.input.minute).toBe(30)
+    }
+  })
+
+  test('随机抽样：多城市多时点全部一致', () => {
+    let checked = 0
+    for (const city of CITIES) {
+      for (const hour of [0, 5, 11, 17, 23]) {
+        for (const [y, m, d] of [[1955, 3, 7], [1988, 11, 3], [2024, 2, 11]]) {
+          const { server, local } = bothPaipan(y, m, d, hour, 'female', 40, { birthPlace: city })
+          expect(pillarsOf(local)).toBe(pillarsOf(server))
+          checked++
+        }
+      }
+    }
+    expect(checked).toBe(CITIES.length * 5 * 3)
+  })
+})
 
 describe('前后端排盘一致性 - 四柱', () => {
   test('黄金基准盘（机主本人 2002-11-20 巳时男）两端一致', () => {

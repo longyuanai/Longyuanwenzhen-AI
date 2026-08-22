@@ -22,7 +22,12 @@ const BaziRecordSchema = new Schema({
     day: { type: Number, required: true },
     hour: { type: Number, required: true },
     minute: { type: Number, default: 0 },
-    gender: { type: String, required: true, enum: ['male', 'female'] }
+    gender: { type: String, required: true, enum: ['male', 'female'] },
+
+    // 真太阳时校正的输入。可选：不填则不校正（默认关闭）。
+    // 必须与出生时刻一起存——校正结果依赖它，漏存则回放历史会得到另一个盘。
+    birthPlace: { type: String },
+    longitude: { type: Number }
   },
 
   // 展示用快照，不参与计算
@@ -37,7 +42,15 @@ const BaziRecordSchema = new Schema({
 // 列表查询：按用户 + 时间倒序
 BaziRecordSchema.index({ userId: 1, createdAt: -1 })
 
-// 同一用户重复排同一个盘不该堆叠成多条，靠这个唯一键做幂等
+// 同一用户重复排同一个盘不该堆叠成多条，靠这个唯一键做幂等。
+//
+// 出生地参与唯一键：同一时刻 + 不同出生地是**两个不同的盘**（真太阳时校正
+// 不同），不带进来的话第二个盘会把第一个覆盖掉。
+// 未填出生地的记录该字段缺失，Mongo 唯一索引按 null 处理，老记录不受影响。
+//
+// ⚠️ 索引名从 uniq_user_birth 改成 uniq_user_birth_v2：Mongo 不会就地
+// 修改既有索引的键集，同名重建会静默沿用旧定义。库里若已有 v1 索引，
+// 需手动 dropIndex('uniq_user_birth') 一次。
 BaziRecordSchema.index(
   {
     userId: 1,
@@ -46,9 +59,11 @@ BaziRecordSchema.index(
     'birth.day': 1,
     'birth.hour': 1,
     'birth.minute': 1,
-    'birth.gender': 1
+    'birth.gender': 1,
+    'birth.birthPlace': 1,
+    'birth.longitude': 1
   },
-  { unique: true, name: 'uniq_user_birth' }
+  { unique: true, name: 'uniq_user_birth_v2' }
 )
 
 BaziRecordSchema.pre('save', function (next) {
