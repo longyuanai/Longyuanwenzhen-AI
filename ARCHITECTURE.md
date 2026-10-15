@@ -1,35 +1,44 @@
-# Longyuanwenzhen-AI · 架构导览
+# Longyuanwenzhen-AI · ARCHITECTURE
 
-> 2026-10-12 根据本地目录、已有文档和构建清单建立的工程文档入口；本轮未运行项目业务验收或完整安全审计。
+核实日期：2026-10-15。依据本地README、构建清单和实际入口；本文件不把文档计划当成运行时验收。
 
-- Project ID：`Longyuanwenzhen-AI`
-- GitHub：[longyuanai/Longyuanwenzhen-AI](https://github.com/longyuanai/Longyuanwenzhen-AI)
-- Obsidian：Vault `龙渊` 内的 `03_Projects/Longyuanwenzhen-AI/Longyuanwenzhen-AI - Git关联.md`（记录原理、实验、漏洞分析与复盘）。
+## 目标与范围
 
-## 已核实的工程入口
+维护微信小程序排盘与可选 AI 解读的应用，排盘与 AI 服务边界分别验收。
 
-```text
-Longyuanwenzhen-AI/
-├── AGENTS.md
-├── backend/
-├── bazi-skill-dist/
-├── CLAUDE.md
-├── deploy/
-├── docs/
-├── frontend/
-├── miniprogram/
-├── test-bazi.js
-├── test-server.js
+GitHub：[longyuanai/Longyuanwenzhen-AI](https://github.com/longyuanai/Longyuanwenzhen-AI)。知识笔记：Vault内 `03_Projects/Longyuanwenzhen-AI/Longyuanwenzhen-AI - Git关联.md`。
+
+## 组件与代码入口
+
+| 实际路径 | 责任边界 |
+| --- | --- |
+| [backend](backend) | 服务端 |
+| [frontend](frontend) | 界面 |
+| [miniprogram](miniprogram) | 微信小程序 |
+| [docs](docs) | 工程规范与说明 |
+
+## 数据与控制流
+
+以下链路对应README/规范描述；实现覆盖以代码入口和适用验证为准。
+
+```mermaid
+flowchart LR
+    N0["小程序/前端输入"]
+    N1["排盘算法"]
+    N2["结果展示"]
+    N3["可选授权AI解读"]
+    N0 --> N1
+    N1 --> N2
+    N2 --> N3
 ```
 
-## 构建与技术栈依据
+## 构建与依赖依据
 
-根目录没有标准构建清单；按已有 README 与子目录清单确认，不推断技术栈。
+按README和各子目录清单运行；文档/静态/脚本项目不额外引入构建框架。
 
-## 边界与待补充
+## 验证边界
 
-- 组件职责、数据流、数据模型与部署边界以现行技术规范为准。
-- [ ] 在真实代码反馈后补充仍缺少的数据流或设计取舍；当前不把拟议能力标为已实现。
+使用脱敏日期样本验证时区、日期边界、空输入与错误处理；不使用机主出生资料。
 
 ## 现行依据
 
